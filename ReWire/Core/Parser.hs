@@ -1,16 +1,18 @@
+-- TODO: Qualified names
+-- TODO: do-notation
+
 module ReWire.Core.Parser where
 
-import ReWire.Scoping
 import ReWire.Core.Syntax
 import Text.Parsec
 import Text.Parsec.Language as L
 import qualified Text.Parsec.Token as T
 import Data.Char (isUpper,isLower)
 import Data.List (nub)
-import Control.Monad (liftM,foldM)
+import Data.Foldable (toList)
 
 rwcDef :: T.LanguageDef st
-rwcDef = L.haskellDef { T.reservedNames   = ["data","of","let","in","end","def","is","case","bind","vhdl"],
+rwcDef = L.haskellDef { T.reservedNames   = ["data","of","let","in","end","def","is","case","bind","vhdl","module","import"],
                         T.reservedOpNames = ["|","\\","->","::","<-"] }
 
 lexer = T.makeTokenParser rwcDef
@@ -45,7 +47,13 @@ semiSep1       = T.semiSep1 lexer
 commaSep       = T.commaSep lexer
 commaSep1      = T.commaSep1 lexer
 
-tblank = RWCTyCon (TyConId "_")
+name           = identifier
+
+con_Unit                = "Prelude.()"
+con_Tuple n | n < 2     = error "Parser: can't happen: tycon_Tuple arity < 2"
+            | otherwise = "Prelude.(" ++ replicate (n-1) ',' ++ ")"
+con_Arrow               = "Prelude.(->)"
+mkArrow t1 t2 = TyApp (TyApp (TyVar con_Arrow) t1) t2
 
 varid = lexeme $ try $
         do{ name <- identifier
@@ -61,44 +69,50 @@ conid = lexeme $ try $
              else return name
           }
 
-prog = do dds  <- many datadecl
-          pds  <- many primdefn
-          defs <- many defn
-          return (RWCProg dds pds defs)
+import_ = do reserved "import"
+             conid
 
+module_ = do reserved "module"
+             n    <- conid
+             imps <- many import_
+             dds  <- many datadecl
+             pds  <- many primdefn
+             defs <- many defn
+             return (Module n dds pds defs)
+             
 datadecl = do reserved "data"
               i   <- conid
               tvs <- many varid
               reserved "is"
               dcs <- datacon `sepBy` reservedOp "|"
               reserved "end"
-              return (RWCData (TyConId i) (map mkId tvs) dcs)
+              return (Data i tvs dcs)
 
 datacon = do i  <- conid
              ts <- many atype
-             return (RWCDataCon (DataConId i) ts)
-
-mktuplecon :: Int -> String
-mktuplecon n = "Tuple" ++ show n
+             return (Ctor i ts)
 
 atype = do tm <- angles ty
            tv <- angles ty
-           return (RWCTyComp tm tv)
-    <|> do i <- conid
-           return (RWCTyCon (TyConId i))
-    <|> do i <- varid
-           return (RWCTyVar (mkId i))
+           return (TyComp tm tv)
+    <|> do i <- identifier
+           return (TyVar i)
     <|> do ts <- parens (ty `sepBy` comma)
            case ts of
-             []  -> return (RWCTyCon (TyConId "Unit"))
+             []  -> return (TyVar con_Unit)
              [t] -> return t
-             _   -> return (foldl RWCTyApp (RWCTyCon (TyConId $ mktuplecon (length ts))) ts)
+             _   -> return (foldl TyApp tc ts) where tc = TyVar (con_Tuple (length ts))
              
 btype = do ts <- many1 atype
-           return (foldl1 RWCTyApp ts)
+           return (foldl1 TyApp ts)
 
 ty = do ts <- btype `sepBy1` reservedOp "->"
         return (foldr1 mkArrow ts)
+
+mkPoly :: Ty String -> PolyTy String
+mkPoly t = tvs t :-> t
+  where tvs = nub . filter isTyVar . toList
+        isTyVar = isLower . head
 
 primdefn = do reserved "vhdl"
               i <- varid
@@ -106,7 +120,7 @@ primdefn = do reserved "vhdl"
               t <- ty
               reserved "is"
               n <- varid
-              return (RWCPrim (mkId i) t n)
+              return (Prim i (mkPoly t) n)
               
 defn = do i <- varid
           reservedOp "::"
@@ -114,47 +128,31 @@ defn = do i <- varid
           reserved "is"
           e <- expr
           reserved "end"
-          return (RWCDefn (mkId i) (nub (fv t) :-> t) e)
+          return (Defn i (mkPoly t) e)
 
 expr = lamexpr
    <|> do es <- many1 aexpr
-          return (foldl1 RWCApp es)
+          return (foldl1 App es)
 
-aexpr = do i <- varid
-           return (RWCVar (mkId i) tblank)
-    <|> do i <- conid
-           return (RWCCon (DataConId i) tblank)
-    <|> do l <- literal
-           return (RWCLiteral l)
+aexpr = do i <- name
+           return (Var i)
     <|> do es <- parens (expr `sepBy` comma)
            case es of
-             []  -> return (RWCCon (DataConId "Unit") tblank)
+             []  -> return (Var con_Unit)
              [e] -> return e
-             _   -> return (foldl RWCApp (RWCCon (DataConId $ mktuplecon (length es)) tblank) es)
+             _   -> return (foldl App tc es) where tc = Var (con_Tuple (length es))
              
-literal = liftM RWCLitInteger natural
-      <|> liftM RWCLitFloat float
-      <|> liftM RWCLitChar charLiteral
-
 lamexpr = do reservedOp "\\"
-             i <- varid
+             i <- name
              reservedOp "->"
              e <- expr
-             return (RWCLam (mkId i) tblank e)
-      <|> do reserved "let"
-             x <- varid
-             reservedOp "="
-             e1 <- expr
-             reserved "in"
-             e2 <- expr
---             reserved "end"
-             return (RWCLet (mkId x) e1 e2)
+             return (Lam i e)
       <|> do reserved "case"
              e    <- expr
              reserved "of"
              alts <- braces (alt `sepBy` semi)
-             return (RWCCase e alts)
-      <|> do reserved "bind"
+             return (Case e alts)
+{-      <|> do reserved "bind"
              i  <- varid
              reservedOp "<-"
              ei <- expr
@@ -162,46 +160,38 @@ lamexpr = do reservedOp "\\"
              eb <- expr
 --             reserved "end"
 --             return (RWCBind (mkId i) ei eb)
-             return (RWCApp (RWCApp (RWCVar (mkId "bind") tblank) ei) (RWCLam (mkId i) tblank eb))
-
-wildcardify fvs (RWCPatCon i ps)               = RWCPatCon i (map (wildcardify fvs) ps)
-wildcardify fvs (RWCPatLiteral l)              = RWCPatLiteral l
-wildcardify fvs (RWCPatVar i t) | i `elem` fvs = RWCPatVar i t
-                                | otherwise    = RWCPatWild
-wildcardify fvs RWCPatWild                        = RWCPatWild
+             return (RWCApp (RWCApp (RWCVar (mkId "bind") tblank) ei) (RWCLam (mkId i) tblank eb))-}
 
 alt = do p <- pat
          reservedOp "->"
          e <- expr
-         return (RWCAlt (wildcardify (fv e) p) e)
+         return (Alt p e)
 
-pat = do i <- conid
+pat = do i    <- conid
          pats <- many apat
-         return (RWCPatCon (DataConId i) pats)
+         return (Pat i pats)
   <|> apat
 
-apat = do i <- varid
-          return (RWCPatVar (mkId i) tblank)
-   <|> do i <- conid
-          return (RWCPatCon (DataConId i) [])
-   <|> do l <- literal
-          return (RWCPatLiteral l)
+apat = do i <- name
+          return (Pat i [])
    <|> do symbol "_"
-          return RWCPatWild
+          return (Pat "_" [])
    <|> do ps <- parens (pat `sepBy` comma)
           case ps of
-            []  -> return (RWCPatCon (DataConId "Unit") [])
+            []  -> return (Pat con_Unit [])
             [p] -> return p
-            _   -> return (RWCPatCon (DataConId $ mktuplecon (length ps)) ps)
-parse :: String -> Either String RWCProg
+            _   -> return (Pat (con_Tuple (length ps)) ps)
+
+parse :: String -> Either String (Module String)
 parse = parsewithname "<no filename>"
 
-parsewithname :: FilePath -> String -> Either String RWCProg
+parsewithname :: FilePath -> String -> Either String (Module String)
 parsewithname filename guts =
-  case runParser (whiteSpace >> prog >>= \ p -> whiteSpace >> eof >> return p) () filename guts of
+  case runParser (whiteSpace >> module_ >>= \ p -> whiteSpace >> eof >> return p) () filename guts of
     Left e  -> Left (show e)
     Right p -> Right p
             
-parsefile :: FilePath -> IO (Either String RWCProg)
+parsefile :: FilePath -> IO (Either String (Module String))
 parsefile fname = do guts <- readFile fname
                      return (parsewithname fname guts)
+

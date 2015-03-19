@@ -74,35 +74,35 @@ executable rwc
 library 
   exposed-modules: ReWire.Core.Syntax
                    ReWire.Core.Parser
-                   ReWire.Core.TypeChecker
-                   ReWire.Core.Kinds
-                   ReWire.Core.KindChecker
-                   ReWire.Core.PrettyPrintHaskell
-                   ReWire.Core.Prims
-                   ReWire.PreHDL.CFG
+--                   ReWire.Core.TypeChecker
+--                   ReWire.Core.Kinds
+--                   ReWire.Core.KindChecker
+--                   ReWire.Core.PrettyPrintHaskell
+--                   ReWire.Core.Prims
+--                   ReWire.PreHDL.CFG
 --                   ReWire.PreHDL.ConnectLogic
-                   ReWire.PreHDL.ElimEmpty
-                   ReWire.PreHDL.GotoElim
-                   ReWire.PreHDL.Syntax
-                   ReWire.PreHDL.ToVHDL
-                   ReWire.Core.Transformations.Interactive
+--                   ReWire.PreHDL.ElimEmpty
+--                   ReWire.PreHDL.GotoElim
+--                   ReWire.PreHDL.Syntax
+--                   ReWire.PreHDL.ToVHDL
+--                   ReWire.Core.Transformations.Interactive
 --                   ReWire.Core.Transformations.CaseInsertion
 --                   ReWire.Core.Transformations.CBN
 --                   ReWire.Core.Transformations.CheckNF
-                   ReWire.Core.Transformations.DeUniquify
-                   ReWire.Core.Transformations.Expand
+--                   ReWire.Core.Transformations.DeUniquify
+--                   ReWire.Core.Transformations.Expand
 --                   ReWire.Core.Transformations.LambdaLift
-                   ReWire.Core.Transformations.Monad
+--                   ReWire.Core.Transformations.Monad
 --                   ReWire.Core.Transformations.Occurs
-                   ReWire.Core.Transformations.Purge
-                   ReWire.Core.Transformations.Reduce
+--                   ReWire.Core.Transformations.Purge
+--                   ReWire.Core.Transformations.Reduce
 --                   ReWire.Core.Transformations.Status
 --                   ReWire.Core.Transformations.Strictness
-                   ReWire.Core.Transformations.ToPreHDL
-                   ReWire.Core.Transformations.Types
-                   ReWire.Core.Transformations.Uniquify
+--                   ReWire.Core.Transformations.ToPreHDL
+--                   ReWire.Core.Transformations.Types
+--                   ReWire.Core.Transformations.Uniquify
 --                   ReWire.Core.Transformations.Uses
-                   ReWire.Scoping
+--                   ReWire.Scoping
 
 
   
@@ -110,7 +110,7 @@ library
   other-extensions:    FlexibleInstances, MultiParamTypeClasses, FlexibleContexts, UndecidableInstances
   
   -- Other library packages from which modules are imported.
-  build-depends:       base >=4.6, mtl >=2.1, transformers >=0.3, pretty >=1.1, parsec >=3.1, containers >= 0.5, bytestring >= 0.10, deepseq >= 1.3.0, fgl >= 5.5, graphviz >= 2999.7, text >= 0.11
+  build-depends:       base >=4.6, mtl >=2.1, transformers >=0.3, pretty >=1.1, parsec >=3.1, containers >= 0.5, bytestring >= 0.10, deepseq >= 1.3.0, fgl >= 5.5, graphviz >= 2999.7, text >= 0.11, generic-deriving >=1.7.0
   
   -- Base language which the package is written in.
   default-language:    Haskell2010
