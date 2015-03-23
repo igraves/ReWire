@@ -123,12 +123,11 @@ primdefn = do reserved "vhdl"
               return (Prim i (mkPoly t) n)
               
 defn = do i <- varid
-          reservedOp "::"
-          t <- ty
+          mt <- optionMaybe (reservedOp "::" >> ty)
           reserved "is"
           e <- expr
           reserved "end"
-          return (Defn i (mkPoly t) e)
+          return (Defn i (fmap mkPoly mt) e)
 
 expr = lamexpr
    <|> do es <- many1 aexpr
@@ -194,4 +193,3 @@ parsewithname filename guts =
 parsefile :: FilePath -> IO (Either String (Module String))
 parsefile fname = do guts <- readFile fname
                      return (parsewithname fname guts)
-

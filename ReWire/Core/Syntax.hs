@@ -11,6 +11,16 @@ import Control.DeepSeq
 
 type ModName = String
 
+data Kind v = KiApp (Kind v) (Kind v)
+            | KiArrow (Kind v) (Kind v)
+            | KiStar
+            | KiVar v
+            deriving (Ord,Eq,Show,Generic,Generic1)
+
+instance NFData v => NFData (Kind v)
+instance GFunctor Kind
+instance Functor Kind where fmap = gmap
+
 ---
 
 data Ty v = TyApp (Ty v) (Ty v)
@@ -26,7 +36,7 @@ instance Foldable.Foldable Ty where foldr = gfoldr
 
 ---
 
-data PolyTy v = [v] :-> Ty v deriving (Show,Generic,Generic1)
+data PolyTy v = [v] :-> Ty v deriving (Eq,Show,Generic,Generic1)
 
 infixr :->
 
@@ -67,7 +77,7 @@ instance Functor Pat where fmap = gmap
 ---
 
 data Prim v = Prim { primName     :: v,
-                     primTy       :: PolyTy v,
+                     primDeclTy   :: PolyTy v,
                      primVHDLName :: String }
           deriving (Show,Generic,Generic1)
 
@@ -78,7 +88,7 @@ instance Functor Prim where fmap = gmap
 ---
 
 data Defn v = Defn { defnName   :: v,
-                     defnPolyTy :: PolyTy v,
+                     defnDeclTy :: Maybe (PolyTy v),
                      defnBody   :: Exp v }
             deriving (Show,Generic,Generic1)
 
