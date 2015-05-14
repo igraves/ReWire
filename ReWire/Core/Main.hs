@@ -1,5 +1,6 @@
 {-# LANGUAGE JavaScriptFFI      #-}
 {-# LANGUAGE OverloadedStrings  #-}
+{-# LANGUAGE CPP                #-}
 
 module ReWire.Core.Main where
 
@@ -20,15 +21,20 @@ import ReWire.PreHDL.ToVHDL
 import ReWire.PreHDL.ConnectLogic
 
 import ReWire.Core.Transformations.ToPreHDL
+
+#ifdef __GHCJS__
 import qualified GHCJS.Types as T
 import GHCJS.Marshal
 import GHCJS.Foreign
-
 import qualified Data.Text as Txt
 
 foreign import javascript unsafe "console.log($1)" jlog :: T.JSString -> IO ()
 --jlog = putStrLn
 --toJSString = id
+#else
+jlog = putStrLn
+toJSString = id
+#endif
 
 main :: IO ()
 main = do args <- getArgs
@@ -54,7 +60,7 @@ main = do args <- getArgs
                                                                       putStrLn "tc debug print finished"
                                                                       trans p'
 
-
+#ifdef __GHCJS__
 rwcStr :: String -> IO ()
 rwcStr str = do
                let res_p = parsewithname "Visual ReWire Diagram" str 
@@ -70,9 +76,14 @@ rwcStr str = do
                                                                 jlog (toJSString res)
   where
     c2p p (a,b,c,d,e) = (a,b,c,map (\(x,(y,z)) -> (x,(elimEmpty $ gotoElim $ cfgToProg y,z))) d,convNCLs p e)
+
 rewire :: T.JSRef T.JSString -> IO ()
 rewire jref = do
                 t <- fromJSRef jref
                 case t of
                      Just jstr -> rwcStr (fromJSString jstr) 
                      Nothing   -> jlog "Couldn't unmarshal JRef."
+#else
+rewire :: String -> IO ()
+rewire = putStrLn
+#endif
