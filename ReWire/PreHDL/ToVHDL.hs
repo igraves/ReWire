@@ -74,8 +74,8 @@ vFunDefn fd = "function " ++ funDefnName fd ++ (if null params
            ++ "end " ++ funDefnName fd ++ ";"
       where params = funDefnParams fd
 
---flopName n = n ++ "_flop"
---flopNextName n = n ++ "_flop_next"
+flopName n = n ++ "_flop"
+flopNextName n = n ++ "_flop_next"
 
 --toVHDL :: Prog -> String
 --toVHDL p = "library ieee;\n"
@@ -217,7 +217,7 @@ toVHDL e p = "library ieee;\n"
         ++ "         output : out std_logic_vector (0 to " ++ show (outputSize (progHeader p)-1) ++ "));\n"
         ++ "end " ++ e ++ ";\n"
         ++ "\n"
-{-        ++ "architecture behavioral of rewire is\n"
+        ++ "architecture behavioral of rewire is\n"
         ++ indent ("type control_state is (" ++ intercalate "," (stateNames (progHeader p)) ++ ");\n")
         ++ indent (concatMap (++"\n") vFunProtos)
         ++ indent (concatMap (++"\n") vFunDefns)
@@ -295,7 +295,7 @@ toVHDL e p = "library ieee;\n"
         flopUpdate n        = flopName n ++ " <= " ++ flopNextName n ++ ";"
         controlFlopUpdate   = flopUpdate "control"
         varFlopUpdates      = map flopUpdate varNames
--}
+{-
         ++ "architecture behavioral of " ++ e ++ " is\n"
         ++ "  type control_state is (" ++ intercalate "," (stateNames (progHeader p)) ++ ");\n"
         ++ indent (concatMap vFunDefnProto (funDefns (progHeader p))) ++ "\n"
@@ -315,3 +315,4 @@ toVHDL e p = "library ieee;\n"
            )
         ++ "end behavioral;\n"
 --        vHeader (progHeader p) ++ vCmd (progBody p)
+-}

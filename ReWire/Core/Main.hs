@@ -17,6 +17,7 @@ import ReWire.PreHDL.CFG
 import ReWire.PreHDL.GotoElim
 import ReWire.PreHDL.ElimEmpty
 import ReWire.PreHDL.ToVHDL
+import ReWire.PreHDL.ConnectLogic
 
 import ReWire.Core.Transformations.ToPreHDL
 import qualified GHCJS.Types as T
@@ -64,9 +65,11 @@ rwcStr str = do
                                   Nothing -> case typecheck p of
                                                   Left e   -> jlog "Typecheck failed" --Typecheck failed
                                                   Right p' -> do
-                                                                let res = toVHDL (elimEmpty $ gotoElim $ cfgToProg (cfgFromRW p'))
-                                                                let res = toVHDL (elimEmpty $ gotoElim $ cfgToProg (cfgFromRW p'))
+                                                                --let res = clVHDL (elimEmpty $ gotoElim $ cfgToProg (cfgFromRW p'))
+                                                                let res = clVHDL $ c2p p' $ cfgCLExp p'
                                                                 jlog (toJSString res)
+  where
+    c2p p (a,b,c,d,e) = (a,b,c,map (\(x,(y,z)) -> (x,(elimEmpty $ gotoElim $ cfgToProg y,z))) d,convNCLs p e)
 rewire :: T.JSRef T.JSString -> IO ()
 rewire jref = do
                 t <- fromJSRef jref
