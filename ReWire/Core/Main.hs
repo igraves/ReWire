@@ -19,14 +19,22 @@ import ReWire.PreHDL.GotoElim
 import ReWire.PreHDL.ElimEmpty
 import ReWire.PreHDL.ToVHDL
 import ReWire.PreHDL.ConnectLogic
-
 import ReWire.Core.Transformations.ToPreHDL
+
+import ReWire.RouteLogic.Types
+import ReWire.RouteLogic.CodeGen
+
 
 #ifdef __GHCJS__
 import qualified GHCJS.Types as T
 import GHCJS.Marshal
 import GHCJS.Foreign
 import qualified Data.Text as Txt
+import qualified Data.Text.Lazy as TL
+import qualified Data.Text.Lazy.Encoding as TLE
+import qualified Data.ByteString.Lazy as BS
+
+import Data.Aeson (decode')
 
 foreign import javascript unsafe "console.log($1)" jlog :: T.JSString -> IO ()
 --jlog = putStrLn
@@ -83,7 +91,30 @@ rewire jref = do
                 case t of
                      Just jstr -> rwcStr (fromJSString jstr) 
                      Nothing   -> jlog "Couldn't unmarshal JRef."
+
+argMap = []
+refMap = []
+
+rewireRoute :: T.JSRef T.JSString -> IO ()
+rewireRoute jref = do
+                     t <- fromJSRef jref
+                     case t of
+                        Just jstr -> do 
+                                       case fromJSString jstr of
+                                              str -> do
+                                                         let bs  = TLE.encodeUtf8 $ TL.fromStrict str
+                                                         case decode' bs of
+                                                            Nothing  -> jlog "Badly formed JSON."
+                                                            Just exp -> do 
+                                                                          let res = buildDecls argMap refMap exp
+                                                                          case res of 
+                                                                              Left (E exp) -> jlog (toJSString exp)
+                                                                              Right decls  -> jlog $ toJSString (show decls)
+                        Nothing   -> jlog "Couldn't unmarshal JRef."
 #else
 rewire :: String -> IO ()
 rewire = putStrLn
+
+rewireRoute :: String -> IO ()
+rewireRoute = putStrLn
 #endif
