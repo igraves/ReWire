@@ -1,5 +1,5 @@
 {-# LANGUAGE GADTs #-}
-module ReWire.Modular where
+module ReWire.Modular.Types where
 
 --Modules have a name, import references, exports, and a collection of entities, 
 data Module m s where
