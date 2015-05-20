@@ -1,10 +1,15 @@
+module Bland where
+
+import qualified Foo
+import qualified Bar.Biz.Baz
+
 data Bit is Zero | One end
 data Unit is Unit end
 
 
 on :: <ReT Unit Bit I><()>
 is
-    bind i <- signal One 
+    bind i <- signal Foo.One.diss 
   in on
 end
 
