@@ -6,11 +6,13 @@ import Text.Parsec
 import Text.Parsec.Language as L
 import qualified Text.Parsec.Token as T
 import Data.Char (isUpper,isLower)
-import Data.List (nub)
+import Data.List (nub, intercalate)
 import Control.Monad (liftM,foldM)
 
+import Data.ByteString.Char8 (pack)
+
 rwcDef :: T.LanguageDef st
-rwcDef = L.haskellDef { T.reservedNames   = ["data","of","let","in","end","def","is","case","bind","vhdl"],
+rwcDef = L.haskellDef { T.reservedNames   = ["data","of","let","in","end","def","is","case","bind","vhdl","module","where","import", "qualified"],
                         T.reservedOpNames = ["|","\\","->","::","<-"] }
 
 lexer = T.makeTokenParser rwcDef
@@ -47,24 +49,51 @@ commaSep1      = T.commaSep1 lexer
 
 tblank = RWCTyCon (TyConId "_")
 
+convar = do
+           con <- endBy1 conid (symbol ".")
+           var <- varid
+           return (intercalate "." (con ++ [var]))
+
+concon = do
+           c   <- conid
+           symbol "."
+           con <- sepBy1 conid (symbol ".")
+           var <- varid
+           return (intercalate "." (con ++ [var]))
+
 varid = lexeme $ try $
-        do{ name <- identifier
+        (do{ name <- identifier
           ; if isUpper (head name)
              then unexpected ("conid " ++ show name)
              else return name
-          }
+          }) 
 
 conid = lexeme $ try $
         do{ name <- identifier
           ; if isLower (head name)
              then unexpected ("varid " ++ show name)
              else return name
-          }
+          } 
 
-prog = do dds  <- many datadecl
+modu = do
+        reserved "module"
+        mods <- conid `sepBy1` (symbol ".")
+        reserved "where"
+        return (intercalate "." mods)
+
+imprt = do
+          reserved "import"
+          reserved "qualified"
+          imps <- conid `sepBy1` (symbol ".")
+          return (intercalate "." imps)
+
+prog = do 
+          mod  <- liftM (fmap pack) (optionMaybe modu)
+          ims  <- liftM (map pack) (many imprt)
+          dds  <- many datadecl
           pds  <- many primdefn
           defs <- many defn
-          return (RWCProg dds pds defs)
+          return (RWCProg mod ims dds pds defs)
 
 datadecl = do reserved "data"
               i   <- conid

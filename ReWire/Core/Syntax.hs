@@ -9,7 +9,7 @@ import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Control.Monad.State
 import Control.DeepSeq
-import Data.ByteString.Char8 (pack)
+import Data.ByteString.Char8 (pack,ByteString)
 
 newtype DataConId = DataConId { deDataConId :: String } deriving (Eq,Ord,Show,NFData)
 newtype TyConId   = TyConId   { deTyConId :: String } deriving (Eq,Ord,Show,NFData)
@@ -281,14 +281,18 @@ instance NFData RWCDataCon where
   rnf (RWCDataCon i ts) = i `deepseq` ts `deepseq` ()
 
 ---
+type ModuleName = ByteString
+type ImportName = ByteString
   
-data RWCProg = RWCProg { dataDecls :: [RWCData],
+data RWCProg = RWCProg { modname   :: Maybe ModuleName,
+                         imports   :: [ImportName], 
+                         dataDecls :: [RWCData],
                          primDecls :: [RWCPrim],
                          defns     :: [RWCDefn] }
                        deriving Show
 
 instance NFData RWCProg where
-  rnf (RWCProg dds pds defs) = dds `deepseq` pds `deepseq` defs `deepseq` ()
+  rnf (RWCProg mn ims dds pds defs) = mn `deepseq` ims `deepseq` dds `deepseq` pds `deepseq` defs `deepseq` ()
 
 ---
   

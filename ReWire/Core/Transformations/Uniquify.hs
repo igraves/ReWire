@@ -125,10 +125,10 @@ uniquifyDefn (RWCDefn n (tvs :-> t) e) = do (tvs',(t',e')) <- uniquingT tvs (do
                                             return (RWCDefn n (tvs' :-> t') e')
 
 uniquifyProg :: RWCProg -> UQM RWCProg
-uniquifyProg (RWCProg dds pds ds) = do dds' <- mapM uniquifyDataDecl dds
-                                       pds' <- mapM uniquifyPrimDecl pds
-                                       ds'  <- mapM uniquifyDefn ds
-                                       return (RWCProg dds' pds' ds')
+uniquifyProg (RWCProg mn imps dds pds ds) = do dds' <- mapM uniquifyDataDecl dds
+                                               pds' <- mapM uniquifyPrimDecl pds
+                                               ds'  <- mapM uniquifyDefn ds
+                                               return (RWCProg mn imps dds' pds' ds')
 
 uniquifyE :: Int -> RWCExp -> (RWCExp,Int)
 uniquifyE ctr e = runIdentity $ runStateT (runReaderT (runReaderT (uniquifyExpr e) Map.empty) Map.empty) ctr

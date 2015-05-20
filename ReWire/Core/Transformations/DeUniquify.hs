@@ -148,10 +148,10 @@ dqDefn (RWCDefn n (tvs :-> t) e) = do (tvs',(t',e')) <- dqingT tvs (do
                                       return (RWCDefn n (tvs' :-> t') e')
 
 dqProg :: RWCProg -> DQM RWCProg
-dqProg (RWCProg dds pds ds) = do dds' <- mapM dqDataDecl dds
-                                 pds' <- mapM dqPrimDecl pds
-                                 ds'  <- mapM dqDefn ds
-                                 return (RWCProg dds' pds' ds')
+dqProg (RWCProg mn imps dds pds ds) = do dds' <- mapM dqDataDecl dds
+                                         pds' <- mapM dqPrimDecl pds
+                                         ds'  <- mapM dqDefn ds
+                                         return (RWCProg mn imps dds' pds' ds')
 
 deUniquify :: RWCProg -> RWCProg
 deUniquify p = runIdentity (runReaderT (dqProg p) (DQEnv Map.empty Set.empty Map.empty Set.empty))

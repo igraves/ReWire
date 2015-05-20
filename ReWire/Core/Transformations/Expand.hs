@@ -38,8 +38,8 @@ expandDefn ns (RWCDefn n pt e) = do e' <- expandExpr ns e
                                     return (RWCDefn n pt e')
 
 expandProg :: [Id RWCExp] -> RWCProg -> RW RWCProg
-expandProg ns (RWCProg dds pds defns) = do defns' <- mapM (expandDefn ns) defns
-                                           return (RWCProg dds pds defns')
+expandProg ns (RWCProg mn imps dds pds defns) = do defns' <- mapM (expandDefn ns) defns
+                                                   return (RWCProg mn imps dds pds defns')
 
 expand :: [Id RWCExp] -> RWCProg -> RWCProg
 expand ns p_ = deUniquify $ runRW ctr p (expandProg ns p)
