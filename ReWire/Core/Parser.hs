@@ -49,31 +49,41 @@ commaSep1      = T.commaSep1 lexer
 
 tblank = RWCTyCon (TyConId "_")
 
-convar = do
-           con <- endBy1 conid (symbol ".")
-           var <- varid
-           return (intercalate "." (con ++ [var]))
+
+condot = do
+           c <- conid'
+           symbol "."
+           return c
 
 concon = do
-           c   <- conid
-           symbol "."
-           con <- sepBy1 conid (symbol ".")
-           var <- varid
-           return (intercalate "." (con ++ [var]))
+           c   <- condot
+           cs  <- many (try condot)
+           c'  <- conid'
+           return (intercalate "." $ (c:cs) ++ [c']) 
 
-varid = lexeme $ try $
+
+convar = do
+           cs  <- many1 condot
+           var <- varid'
+           return (intercalate "." $ cs ++ [var])
+
+varid = (try convar) <|> varid'
+
+varid' = lexeme $ try $
         (do{ name <- identifier
           ; if isUpper (head name)
              then unexpected ("conid " ++ show name)
              else return name
           }) 
 
-conid = lexeme $ try $
+conid  = (try concon) <|> conid'
+
+conid' = (lexeme $ try $
         do{ name <- identifier
           ; if isLower (head name)
              then unexpected ("varid " ++ show name)
              else return name
-          } 
+          }) 
 
 modu = do
         reserved "module"
