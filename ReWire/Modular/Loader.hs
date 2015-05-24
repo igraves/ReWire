@@ -25,7 +25,7 @@ withEither (Left  e) = throwError e
 prefEither :: MonadError String z => String -> Either String a -> z a
 prefEither _   (Right a) = return a
 prefEither str (Left e)  = throwError (str ++ e)
-                   
+
 basePath :: RWL FilePath
 basePath = liftM fst get
 
