@@ -1,3 +1,4 @@
+{- LANGUAGE OverloadedStrings -}
 module ReWire.Core.Transformations.Qualify where
 
 
@@ -37,5 +38,9 @@ qT ty = do
 
 qE :: RWCExp -> QM RWCExp
 qE exp = case exp of
-                    RWCApp e1 e2 -> liftM2 RWCApp (qE e1) (qE e2)
-                    RWCLam 
+                    RWCApp e1 e2     -> liftM2 RWCApp (qE e1) (qE e2)
+                    RWCLam i ty exp  -> liftM2 (RWCLam i) (qT ty) (qE exp)
+                    RWCLet i e1 e2   -> liftM2 (RWCLet i) (qE e1) (qE e2) 
+                    RWCVar ( 
+   where
+     rV ::  
