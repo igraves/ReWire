@@ -26,9 +26,16 @@ qual s = liftM (++ s) pref
 qualBS :: ByteString -> QM ByteString
 qualBS s = liftM (`append` s) prefBS
 
-{-
-qualifyTy :: RWCTy -> RWCTy
-qualifyTy ty = case ty of
-                  (RWCTyCon 
-                  (RWCTyApp t1 t2) -> RWCTyApp (qualifyTy t1) (qualifyTy t2)
--}
+qT :: RWCTy -> QM RWCTy
+qT ty = do
+                pref <- pref
+                case ty of
+                  (RWCTyCon (TyConId s)) -> liftM (RWCTyCon . TyConId) (qual s) 
+                  (RWCTyApp t1 t2)       -> liftM2 RWCTyApp (qT t1) (qT t2)
+                  t@(RWCTyVar _)         -> return t
+                  (RWCTyComp t1 t2)      -> liftM2 RWCTyComp (qT t1) (qT t2)
+
+qE :: RWCExp -> QM RWCExp
+qE exp = case exp of
+                    RWCApp e1 e2 -> liftM2 RWCApp (qE e1) (qE e2)
+                    RWCLam 
