@@ -60,7 +60,7 @@ qE exp = case exp of
                     RWCVar n ty      -> liftM2 RWCVar (rV n) (qT ty)
                     RWCCon (DataConId n) ty -> liftM2 RWCCon (liftM DataConId (qual n)) (qT ty)
                     RWCLiteral lit   -> return $ RWCLiteral lit
-                    RWCCase exp alts -> undefined
+                    RWCCase exp alts -> liftM2 RWCCase (qE exp) (mapM qA alts)
 
 qP :: RWCPat -> QM RWCPat
 qP pat = case pat of
@@ -77,3 +77,12 @@ qPrim (RWCPrim n ty s) = liftM3 RWCPrim (rV n) (qT ty) (return s)
 
 qDefn :: RWCDefn -> QM RWCDefn
 qDefn (RWCDefn n pty exp) = liftM3 RWCDefn (rV n) (qPTy pty) (qE exp)
+
+qDataCon :: RWCDataCon -> QM RWCDataCon
+qDataCon (RWCDataCon (DataConId id) tys) = liftM2 RWCDataCon (liftM DataConId $ qual id) (mapM qT tys)
+
+qData :: RWCData -> QM RWCData
+qData (RWCData (TyConId i) tys cons) = liftM3 RWCData (liftM TyConId $ qual i) (mapM rV tys) (mapM qDataCon cons)
+                                                
+qProg :: RWCProg -> QM RWCProg
+qProg (RWCProg mn imp decls prims defns) = liftM3 (RWCProg mn imp) (mapM qData decls) (mapM qPrim prims) (mapM qDefn defns)
