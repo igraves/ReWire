@@ -21,11 +21,9 @@ import ReWire.PreHDL.ToVHDL
 import ReWire.PreHDL.ConnectLogic
 import ReWire.Core.Transformations.ToPreHDL
 
+#ifdef __GHCJS__
 import ReWire.RouteLogic.Types
 import ReWire.RouteLogic.CodeGen
-
-
-#ifdef __GHCJS__
 import qualified GHCJS.Types as T
 import GHCJS.Marshal
 import GHCJS.Foreign

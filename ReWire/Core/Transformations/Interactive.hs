@@ -19,6 +19,7 @@ import Data.Char
 import ReWire.Core.Transformations.Expand (cmdExpand)
 import ReWire.Core.Transformations.Reduce (cmdReduce)
 import ReWire.Core.Transformations.Purge (cmdPurge,cmdOccurs)
+import ReWire.Core.Transformations.Qualify (cmdQualify)
 --import ReWire.Core.Transformations.LambdaLift (lambdaLift)
 --import ReWire.Core.Transformations.Status (cmdStatus)
 --import ReWire.Core.Transformations.Uses (cmdUses)
@@ -69,8 +70,9 @@ cmdTable = [
             ("toscfg",cmdToSCFG),
             ("tocfg",cmdToCFG),
             ("topre",cmdToPre),
-            ("topreg",cmdToPreG)
+            ("topreg",cmdToPreG),
 --            ("topseudo",cmdToPseudo)
+            ("qualify",cmdQualify)
            ]
 
 -- The "repl" for the translation environment.
