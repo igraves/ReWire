@@ -5,7 +5,9 @@ module ReWire.Core.Transformations.Qualify where
 import Control.Monad
 import Control.Monad.Reader
 import Control.Applicative
-import Data.ByteString.Char8
+import Data.ByteString.Char8 hiding (elem)
+import Data.Char
+import Data.String
 
 import qualified Data.ByteString.Char8 as BS
 
@@ -15,8 +17,26 @@ import ReWire.Core.Transformations.Uniquify
 import ReWire.Core.Transformations.DeUniquify
 
 
+cmdQualify _ prog = (Just (qualify prog),Nothing)
+
+qualify :: RWCProg -> RWCProg
+qualify prog = case modname prog of
+                     Nothing -> error "Qualifying module with no module name"
+                     Just mn -> let mn' = (BS.unpack mn) ++ (fromString ".")
+                                    (prog',_) = uniquify 0 prog 
+                                    prog'' = runReader (qProg prog) mn'
+                                 in deUniquify prog''
+
 type QM = Reader String
 
+--TODO: This could be made stronger, but this may do well enough.
+isQStr :: String -> Bool
+isQStr (s:str) = isUpper s && '.' `elem` str
+
+isQBS :: ByteString -> Bool
+isQBS bs = case BS.length bs > 0 of
+                True -> (isUpper . BS.head) bs && BS.elem '.' bs
+                False -> False
 
 pref :: QM String
 pref = ask
@@ -25,10 +45,14 @@ prefBS :: QM ByteString
 prefBS = liftM pack ask
 
 qual :: String -> QM String
-qual s = liftM (++ s) pref
+qual s = if isQStr s
+          then return s --if it's already qualified, don't qualify it
+          else liftM (++ s) pref
 
 qualBS :: ByteString -> QM ByteString
-qualBS s = liftM (`append` s) prefBS
+qualBS s = if isQBS s
+            then return s --if it's already qualified, don't qualify it
+            else liftM (`append` s) prefBS
 
 rV ::  Id a -> QM (Id a)
 rV i@(Id k n) = if BS.elem '@' n
