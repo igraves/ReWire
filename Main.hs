@@ -1,8 +1,8 @@
-module Main (main, rewire) where
+module Main (main) where
 
 import qualified ReWire.Core.Main as M 
 
-main = return () 
+main = M.main --return () 
 
 --ReWire for export in JS.  Kind of a hack!
-rewire = rewire
+--rewire = rewire
