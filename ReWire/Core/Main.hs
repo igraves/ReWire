@@ -6,6 +6,7 @@ module ReWire.Core.Main where
 
 import System.IO
 import System.Environment
+import System.Directory (getCurrentDirectory)
 import ReWire.Core.Syntax
 import ReWire.Core.Parser
 --import ReWire.Core.PrettyPrint
@@ -13,6 +14,7 @@ import ReWire.Core.PrettyPrintHaskell
 import ReWire.Core.KindChecker
 import ReWire.Core.TypeChecker
 import ReWire.Core.Transformations.Interactive
+import ReWire.Modular.Loader (loadImports)
 --GHCJS
 import ReWire.PreHDL.CFG
 import ReWire.PreHDL.GotoElim
@@ -56,15 +58,20 @@ main = do args <- getArgs
                                      putStrLn "show out finished"
                                      writeFile "Debug.hs" (show $ ppHaskellWithName p "Debug")
                                      putStrLn "debug out finished"
-                                     case kindcheck p of
-                                       Just e  -> hPutStrLn stderr e
-                                       Nothing -> do putStrLn "kc finished"
-                                                     case typecheck p of
-                                                       Left e   -> hPutStrLn stderr e
-                                                       Right p' -> do putStrLn "tc finished"
-                                                                      writeFile "tc.out" (show p')
-                                                                      putStrLn "tc debug print finished"
-                                                                      trans p'
+                                     curdir <- getCurrentDirectory 
+                                     p' <- loadImports curdir p
+                                     case p' of
+                                        Left s  -> putStrLn s
+                                        Right p -> do
+                                                     case kindcheck p of
+                                                       Just e  -> hPutStrLn stderr e
+                                                       Nothing -> do putStrLn "kc finished"
+                                                                     case typecheck p of
+                                                                       Left e   -> hPutStrLn stderr e
+                                                                       Right p' -> do putStrLn "tc finished"
+                                                                                      writeFile "tc.out" (show p')
+                                                                                      putStrLn "tc debug print finished"
+                                                                                      trans p'
 
 #ifdef __GHCJS__
 rwcStr :: String -> IO ()

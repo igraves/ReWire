@@ -1,0 +1,3 @@
+module Types where
+
+data Bit is Zero | One end

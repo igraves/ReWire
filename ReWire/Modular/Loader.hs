@@ -12,11 +12,12 @@ import System.Directory
 
 import ReWire.Core.Parser
 import ReWire.Core.Syntax
+import ReWire.Core.Transformations.Qualify
 
 import Data.ByteString.Char8 (unpack)
 
 type LoadedModules = S.Set ModuleName
-type RWL a = StateT (FilePath, LoadedModules) ((ExceptT String) IO) a
+type RWL a = StateT (FilePath, LoadedModules, RWCProg) ((ExceptT String) IO) a
 
 withEither :: MonadError e z => Either e a -> z a
 withEither (Right a) = return a 
@@ -27,17 +28,39 @@ prefEither _   (Right a) = return a
 prefEither str (Left e)  = throwError (str ++ e)
 
 basePath :: RWL FilePath
-basePath = liftM fst get
+basePath = liftM (\(x,_,_) -> x) get
 
 isLoaded :: ModuleName -> RWL Bool
 isLoaded m = do 
-              s <- liftM snd get
+              s <- liftM (\(_,x,_) -> x) get
               return $ S.member m s
 
 addLoaded :: ModuleName -> RWL ()
 addLoaded m = do
-                (f,s) <- get
-                put (f,S.insert m s)
+                (f,s,p) <- get
+                put (f,S.insert m s,p)
+
+getProg :: RWL RWCProg
+getProg = liftM (\(_,_,p) -> p) get
+
+putProg :: RWCProg -> RWL ()
+putProg p = do
+             (a,b,_) <- get
+             put (a,b,p)
+
+procMod :: ModuleName -> RWL ([ImportName])
+procMod m = do
+              l <- isLoaded m
+              case l of
+                  True  -> return []
+                  False -> do
+                             main <- getProg
+                             prog <- loadModule m
+                             let main' = (qualify prog) >: main
+                             addLoaded m
+                             putProg main'
+                             return (imports prog)
+
 
 loadModule :: ModuleName -> RWL RWCProg
 loadModule m = do 
@@ -66,7 +89,19 @@ loadModule m = do
                                                                                    defs  = unionBy (\x y -> defnName x == defnName y) ldefs rdefs
                                                                              in RWCProg mn ims'' decs prims defs
 
+loadMods :: [ModuleName] -> RWL () 
+loadMods mods = case mods of
+                      [] -> return ()
+                      ms -> do
+                              mms <- mapM procMod mods
+                              let mms' = concat mms
+                              loadMods mms'
 
-
-loadMerge :: ModuleName -> RWCProg -> RWL RWCProg
-loadMerge = undefined
+loadImports :: FilePath -> RWCProg -> IO (Either String RWCProg)
+loadImports path prog = do 
+                            let exp = runStateT (loadMods (imports prog)) (path, S.empty, prog)
+                            res <- runExceptT exp
+                            case res of
+                               (Left s) -> return (Left s)
+                               (Right ((), (_,_,prog))) -> return (Right prog)
+                                          
