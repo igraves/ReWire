@@ -29,7 +29,7 @@ mangler = dots
                                     a   -> acc ++ [a]) []
 
 mangle :: (String -> String) -> RWCProg -> RWCProg
-mangle f prog = qProg f prog
+mangle f prog = deUniquify $ qProg f (fst $ uniquify 0 prog)
 
 type ByteString = BS.ByteString
 class WithString a where
