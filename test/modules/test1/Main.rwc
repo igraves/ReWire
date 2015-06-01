@@ -1,0 +1,35 @@
+module Main where
+
+import qualified Types
+
+data Unit is Unit end
+
+
+not :: Types.Bit -> Types.Bit
+is
+  \x -> case x of
+        {
+          Types.One  -> Types.Zero
+          ;
+          Types.Zero -> Types.One
+        }
+end
+
+
+notre :: Types.Bit -> <ReT Types.Bit Types.Bit I><()>
+is
+  \x -> bind inp <- signal (not x)
+        in notre inp
+end
+
+
+notter :: <ReT Types.Bit Types.Bit I><()>
+is
+  notre Types.Zero
+end
+
+
+start :: <ReT Types.Bit Types.Bit I><()>
+is
+  notter
+end

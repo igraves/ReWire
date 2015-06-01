@@ -13,6 +13,7 @@ import System.Directory
 import ReWire.Core.Parser
 import ReWire.Core.Syntax
 import ReWire.Core.Transformations.Qualify
+import ReWire.Core.Transformations.Mangle
 
 import Data.ByteString.Char8 (unpack)
 
@@ -103,5 +104,5 @@ loadImports path prog = do
                             res <- runExceptT exp
                             case res of
                                (Left s) -> return (Left s)
-                               (Right ((), (_,_,prog))) -> return (Right prog)
+                               (Right ((), (_,_,prog))) -> return (Right $ mangle mangler prog)
                                           
