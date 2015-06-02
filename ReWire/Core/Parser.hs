@@ -12,7 +12,7 @@ import Control.Monad (liftM,foldM)
 import Data.ByteString.Char8 (pack)
 
 rwcDef :: T.LanguageDef st
-rwcDef = L.haskellDef { T.reservedNames   = ["data","of","let","in","end","def","is","case","bind","vhdl","module","where","import", "qualified"],
+rwcDef = L.haskellDef { T.reservedNames   = ["data","of","let","in","end","def","is","case","bind","vhdl","module","where","import", "qualified", "as"],
                         T.reservedOpNames = ["|","\\","->","::","<-"] }
 
 lexer = T.makeTokenParser rwcDef
@@ -91,15 +91,35 @@ modu = do
         reserved "where"
         return (intercalate "." mods)
 
-imprt = do
+qualed = do
           reserved "import"
           reserved "qualified"
           imps <- conid `sepBy1` (symbol ".")
-          return (intercalate "." imps)
+          (as_ imps <|> reg imps)
+  where
+    as_ imps = do
+                 reserved "as"
+                 n <- conid
+                 return $ QualifiedAs (pack $ intercalate "." imps) (pack n)
+    reg imps = return $ Qualified (pack $ intercalate "." imps) 
+
+unqualed = do
+          reserved "import"
+          imps <- conid `sepBy1` (symbol ".")
+          (as_ imps <|> reg imps)
+  where
+    as_ imps = do
+                 reserved "as"
+                 n <- conid
+                 return $ UnqualifiedAs (pack $ intercalate "." imps) (pack n)
+    reg imps = return $ Unqualified (pack $ intercalate "." imps) 
+                 
+
+imprt = (try qualed) <|> unqualed
 
 prog = do 
           mod  <- liftM (fmap pack) (optionMaybe modu)
-          ims  <- liftM (map pack) (many imprt)
+          ims  <- many imprt
           dds  <- many datadecl
           pds  <- many primdefn
           defs <- many defn

@@ -283,9 +283,22 @@ instance NFData RWCDataCon where
 ---
 type ModuleName = ByteString
 type ImportName = ByteString
-  
+
+data Import = Qualified       ImportName
+              | Unqualified   ImportName
+              | QualifiedAs   ImportName ImportName -- import qualified i1 as i2
+              | UnqualifiedAs ImportName ImportName -- import i1 as i2
+          deriving (Show)
+
+instance NFData Import where
+  rnf i = case i of 
+            Qualified imp       -> imp `deepseq` ()
+            Unqualified imp     -> imp `deepseq` ()
+            QualifiedAs i1 i2   -> i1  `deepseq` i2 `deepseq` ()
+            UnqualifiedAs i1 i2 -> i1  `deepseq` i2 `deepseq` ()
+
 data RWCProg = RWCProg { modname   :: Maybe ModuleName,
-                         imports   :: [ImportName], 
+                         imports   :: [Import], 
                          dataDecls :: [RWCData],
                          primDecls :: [RWCPrim],
                          defns     :: [RWCDefn] }
