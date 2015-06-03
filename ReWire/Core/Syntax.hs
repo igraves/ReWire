@@ -288,7 +288,7 @@ data Import = Qualified       ImportName
               | Unqualified   ImportName
               | QualifiedAs   ImportName ImportName -- import qualified i1 as i2
               | UnqualifiedAs ImportName ImportName -- import i1 as i2
-          deriving (Show)
+          deriving (Show,Eq,Ord)
 
 instance NFData Import where
   rnf i = case i of 

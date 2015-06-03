@@ -17,7 +17,7 @@ import ReWire.Core.Transformations.Mangle
 
 import Data.ByteString.Char8 (unpack)
 
-type LoadedModules = S.Set ModuleName
+type LoadedModules = S.Set Import 
 type RWL a = StateT (FilePath, LoadedModules, RWCProg) ((ExceptT String) IO) a
 
 withEither :: MonadError e z => Either e a -> z a
@@ -31,12 +31,12 @@ prefEither str (Left e)  = throwError (str ++ e)
 basePath :: RWL FilePath
 basePath = liftM (\(x,_,_) -> x) get
 
-isLoaded :: ModuleName -> RWL Bool
+isLoaded :: Import -> RWL Bool
 isLoaded m = do 
-              s <- liftM (\(_,x,_) -> x) get
-              return $ S.member m s
+               s <- liftM (\(_,x,_) -> x) get
+               return $ S.member m s
 
-addLoaded :: ModuleName -> RWL ()
+addLoaded :: Import -> RWL ()
 addLoaded m = do
                 (f,s,p) <- get
                 put (f,S.insert m s,p)
@@ -49,7 +49,7 @@ putProg p = do
              (a,b,_) <- get
              put (a,b,p)
 
-procMod :: ModuleName -> RWL ([ImportName])
+procMod :: Import -> RWL ([Import])
 procMod m = do
               l <- isLoaded m
               case l of
@@ -63,8 +63,8 @@ procMod m = do
                              return (imports prog)
 
 
-loadModule :: ModuleName -> RWL RWCProg
-loadModule m = do 
+loadModule :: Import -> RWL RWCProg
+loadModule (Qualified m) = do 
                  let um = (unpack m)
                  base <- basePath
                  let m' = base ++ "/" ++ (map (\x -> if x == '.' then '/' else x) um) ++ ".rwc"
@@ -83,14 +83,16 @@ loadModule m = do
 (>:) :: RWCProg -> RWCProg -> RWCProg
 (RWCProg ln lims ldecs lprims ldefs) >: (RWCProg mn rims rdecs rprims rdefs) = let ims'  = case ln of
                                                                                             Nothing -> rims
-                                                                                            Just ln -> filter (\x -> x /= ln) rims
+                                                                                            Just ln -> filter (\x -> case x of 
+                                                                                                                         Qualified x -> x /= ln
+                                                                                                                         _ -> True) rims
                                                                                    ims'' = unionBy (==) lims rims
                                                                                    decs  = unionBy (\x y -> dataName x == dataName y) ldecs rdecs
                                                                                    prims = unionBy (\x y -> primName x == primName y) lprims rprims
                                                                                    defs  = unionBy (\x y -> defnName x == defnName y) ldefs rdefs
                                                                              in RWCProg mn ims'' decs prims defs
 
-loadMods :: [ModuleName] -> RWL () 
+loadMods :: [Import] -> RWL () 
 loadMods mods = case mods of
                       [] -> return ()
                       ms -> do
