@@ -16,13 +16,13 @@ import Data.Graph
 import Data.List (nub)
 import Data.Maybe (fromJust)
 import Control.Monad.State
-import Control.Monad.Error
+import Control.Monad.Except
 import Control.Monad.Identity
 import Prelude hiding (lookup)
 import Debug.Trace (trace)
 
 data DefnSort = DefnPrim | DefnBitty | DefnCont deriving (Eq,Show)
-type NFM = RWT (ErrorT NFMError (StateT NFMState Identity))
+type NFM = RWT (ExceptT NFMError (StateT NFMState Identity))
 data NFMState = NFM { visited :: Map (Id RWCExp) DefnSort, 
                       cpx     :: Set TyConId }         -- really this should be env not state, but whatever
 type NFMError = String
