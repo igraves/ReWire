@@ -1,6 +1,6 @@
 module Main where
 
-import qualified Types
+import Types
 
 data Unit is Unit end
 
@@ -15,21 +15,22 @@ is
         }
 end
 
-
-notre :: Types.Bit -> <ReT Types.Bit Types.Bit I><()>
+{-
+notre :: Bit -> <ReT Bit Bit I><()>
 is
   \x -> bind inp <- signal (not x)
         in notre inp
 end
 
 
-notter :: <ReT Types.Bit Types.Bit I><()>
+notter :: <ReT Bit Bit I><()>
 is
-  notre Types.Zero
+  notre Zero
 end
 
 
-start :: <ReT Types.Bit Types.Bit I><()>
+start :: <ReT Bit Bit I><()>
 is
   notter
 end
+-}

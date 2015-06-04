@@ -1,4 +1,6 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE BangPatterns #-}
 
 module ReWire.Modular.Loader where
 
@@ -7,17 +9,25 @@ import Control.Monad.Except
 import Control.Monad.IO.Class
 import Data.List
 import qualified Data.Set as S
+import qualified Data.Map.Strict as M
 import Data.Either
 import System.Directory
 
+import ReWire.Scoping (Id(..))
 import ReWire.Core.Parser
 import ReWire.Core.Syntax
-import ReWire.Core.Transformations.Qualify
+import ReWire.Core.Transformations.Qualify hiding (Map)
 import ReWire.Core.Transformations.Mangle
 
 import Data.ByteString.Char8 (unpack)
+import qualified Data.ByteString.Char8 as BS
 
-type LoadedModules = S.Set Import 
+import Debug.Trace
+
+import qualified Data.Traversable
+
+type Map = M.Map
+type LoadedModules = S.Set ModuleName
 type RWL a = StateT (FilePath, LoadedModules, RWCProg) ((ExceptT String) IO) a
 
 withEither :: MonadError e z => Either e a -> z a
@@ -28,15 +38,22 @@ prefEither :: MonadError String z => String -> Either String a -> z a
 prefEither _   (Right a) = return a
 prefEither str (Left e)  = throwError (str ++ e)
 
+--SHAMELESSLY STOLEN FROM: http://stackoverflow.com/questions/19895930/using-monadic-functions-with-data-map-fx-unionwith
+unionWithM :: (Monad m, Ord k) => (a -> a -> m a) -> Map k a -> Map k a -> m (Map k a)
+unionWithM f mapA mapB = Data.Traversable.sequence $ M.unionWith (\a b -> do {x <- a; y <- b; f x y}) (M.map return mapA) (M.map return mapB)
+
+unionWithKeyM :: (Monad m, Ord k) => (k -> a -> a -> m a) -> Map k a -> Map k a -> m (Map k a)
+unionWithKeyM f mapA mapB = Data.Traversable.sequence $ M.unionWithKey (\k a b -> do {x <- a; y <- b; f k x y}) (M.map return mapA) (M.map return mapB)
+
 basePath :: RWL FilePath
 basePath = liftM (\(x,_,_) -> x) get
 
-isLoaded :: Import -> RWL Bool
+isLoaded :: ModuleName -> RWL Bool
 isLoaded m = do 
                s <- liftM (\(_,x,_) -> x) get
                return $ S.member m s
 
-addLoaded :: Import -> RWL ()
+addLoaded :: ModuleName -> RWL ()
 addLoaded m = do
                 (f,s,p) <- get
                 put (f,S.insert m s,p)
@@ -49,22 +66,76 @@ putProg p = do
              (a,b,_) <- get
              put (a,b,p)
 
-procMod :: Import -> RWL ([Import])
+procMod :: ModuleName -> RWL ([ImportName])
 procMod m = do
+              liftIO $ putStrLn "BARRRRRRRR"
               l <- isLoaded m
               case l of
                   True  -> return []
                   False -> do
+                             liftIO $ putStrLn "BAZZZZ"
                              main <- getProg
                              prog <- loadModule m
-                             let main' = (qualify prog) >: main
+                             modnames <- modNS prog
+                             let main' = (qualify modnames prog) >: main
                              addLoaded m
                              putProg main'
-                             return (imports prog)
+                             return (map impName $ imports prog)
 
+idName :: Id a -> ByteString
+idName (Id _ n) = n
 
-loadModule :: Import -> RWL RWCProg
-loadModule (Qualified m) = do 
+modNS :: RWCProg -> RWL (Map ByteString ByteString)
+modNS prog = do
+               let imps = imports prog
+               maps <- mapM importNS imps
+               (!m) <- foldM (\acc item -> unionWithKeyM uf acc item) M.empty maps 
+               return m
+  where
+    uf key v1 v2 = if v1 /= v2
+                    then throwError $ "Ambiguous name: " ++ (BS.unpack key)
+                    else return v1
+                
+               
+
+importNS :: Import -> RWL (Map ByteString ByteString)
+importNS im = do
+              names <- moduleNames (impName im)
+              case im of
+                Qualified mn -> do
+                                  let names' = prefNames mn names
+                                  return $ M.fromList $ zip names' names'
+                QualifiedAs mn as_ -> do
+                                        let val_names = prefNames mn names
+                                            key_names = prefNames as_ names
+                                        return $ M.fromList $ zip key_names val_names
+                Unqualified mn -> do
+                                    let qual_names = prefNames mn names
+                                        namelist = zip names qual_names ++ zip qual_names qual_names
+                                    return $ M.fromList namelist
+                UnqualifiedAs mn as_ -> do
+                                    let qual_names = prefNames as_ names
+                                        val_names  = prefNames mn names
+                                        namelist = zip names val_names ++ zip qual_names val_names
+                                    return $ M.fromList namelist
+  where
+    prefNames :: ByteString -> [ByteString] -> [ByteString]
+    prefNames pref names = map (pref `BS.append` "." `BS.append`) names
+
+moduleNames :: ModuleName -> RWL [ByteString]
+moduleNames mn = do
+                   prog <- loadModule mn
+                   let defs = map (idName . defnName) $ defns prog 
+                       cons = concatMap getCons $ dataDecls prog
+                       tys  = map getTys $ dataDecls prog
+                   return (defs ++ cons ++ tys) 
+  where
+    getCons x = map (BS.pack . deDataConId . (\(RWCDataCon d _) -> d)) $ dataCons x
+    getTys = (BS.pack . deTyConId . dataName) 
+                   
+
+loadModule :: ModuleName -> RWL RWCProg
+loadModule m = do 
                  let um = (unpack m)
                  base <- basePath
                  let m' = base ++ "/" ++ (map (\x -> if x == '.' then '/' else x) um) ++ ".rwc"
@@ -92,8 +163,9 @@ loadModule (Qualified m) = do
                                                                                    defs  = unionBy (\x y -> defnName x == defnName y) ldefs rdefs
                                                                              in RWCProg mn ims'' decs prims defs
 
-loadMods :: [Import] -> RWL () 
-loadMods mods = case mods of
+loadMods :: [ModuleName] -> RWL () 
+loadMods mods = do
+                  case mods of
                       [] -> return ()
                       ms -> do
                               mms <- mapM procMod mods
@@ -102,7 +174,13 @@ loadMods mods = case mods of
 
 loadImports :: FilePath -> RWCProg -> IO (Either String RWCProg)
 loadImports path prog = do 
-                            let exp = runStateT (loadMods (imports prog)) (path, S.empty, prog)
+                            let exp = runStateT (do
+                                                    prog <- getProg
+                                                    modns <- modNS prog
+                                                    liftIO $ print modns
+                                                    let prog' = qualify_ modns prog
+                                                    putProg prog'
+                                                    loadMods (map impName $ imports prog')) (path, S.empty, prog)
                             res <- runExceptT exp
                             case res of
                                (Left s) -> return (Left s)

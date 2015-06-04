@@ -1,4 +1,4 @@
-{- LANGUAGE OverloadedStrings -}
+{-# LANGUAGE OverloadedStrings #-}
 module ReWire.Core.Transformations.Qualify where
 
 
@@ -9,6 +9,8 @@ import Data.ByteString.Char8 hiding (elem)
 import Data.Char
 import Data.String
 
+import qualified Data.Map.Strict as M
+
 import qualified Data.ByteString.Char8 as BS
 
 import ReWire.Scoping
@@ -16,18 +18,29 @@ import ReWire.Core.Syntax
 import ReWire.Core.Transformations.Uniquify 
 import ReWire.Core.Transformations.DeUniquify
 
+type Map = M.Map
 
-cmdQualify _ prog = (Just (qualify prog),Nothing)
+cmdQualify _ prog = (Just (qualify undefined prog),Nothing)
 
-qualify :: RWCProg -> RWCProg
-qualify prog = case modname prog of
+qualify :: Map ByteString ByteString -> RWCProg -> RWCProg
+qualify mp prog = case modname prog of
                      Nothing -> error "Qualifying module with no module name"
-                     Just mn -> let mn' = (BS.unpack mn) ++ (fromString ".")
+                     Just mn -> let --mn' = (BS.unpack mn) ++ (fromString ".")
                                     (prog',_) = uniquify 0 prog 
-                                    prog'' = runReader (qProg prog) mn'
+                                    prog'' = runReader (qProg prog) (mp,mn,True)
                                  in deUniquify prog''
 
-type QM = Reader String
+--No local renaming
+qualify_ :: Map ByteString ByteString -> RWCProg -> RWCProg
+qualify_ mp prog = case modname prog of
+                     Nothing -> error "Qualifying module with no module name"
+                     Just mn -> let --mn' = (BS.unpack mn) ++ (fromString ".")
+                                    (prog',_) = uniquify 0 prog 
+                                    prog'' = runReader (qProg prog) (mp,mn,False)
+                                 in deUniquify prog''
+
+type QM = Reader (Map ByteString ByteString,ByteString,Bool)
+
 
 --TODO: This could be made stronger, but this may do well enough.
 isQStr :: String -> Bool
@@ -38,22 +51,30 @@ isQBS bs = case BS.length bs > 0 of
                 True -> (isUpper . BS.head) bs && BS.elem '.' bs
                 False -> False
 
-pref :: QM String
-pref = ask
-
-prefBS :: QM ByteString
-prefBS = liftM pack ask
-
 qual :: String -> QM String
-qual s = if isQStr s
-          then return s --if it's already qualified, don't qualify it
-          else liftM (++ s) pref
+qual s = do
+           let s' = BS.pack s
+           (mp,pre,loc) <- ask
+           case M.lookup s' mp of
+                Nothing  -> if loc 
+                              then return $ (BS.unpack pre) ++ "." ++ s
+                              else return s
+                Just ql  -> return (BS.unpack ql)
+
 
 qualBS :: ByteString -> QM ByteString
+qualBS s = do 
+           (mp,pre,loc) <- ask
+           case M.lookup s mp of
+                Nothing  -> if loc
+                             then return $ pre `BS.append` "." `BS.append` s 
+                             else return s
+                Just ql  -> return ql
+{-
 qualBS s = if isQBS s
             then return s --if it's already qualified, don't qualify it
             else liftM (`append` s) prefBS
-
+-}
 rV ::  Id a -> QM (Id a)
 rV i@(Id k n) = if BS.elem '@' n
                  then return i
@@ -63,9 +84,11 @@ rV i@(Id k n) = if BS.elem '@' n
 
 qT :: RWCTy -> QM RWCTy
 qT ty = do
-                pref <- pref
+                pref <- liftM (BS.unpack . (\(_,x,_) -> x)) ask 
                 case ty of
-                  (RWCTyCon (TyConId s)) -> liftM (RWCTyCon . TyConId) (qual s) 
+                  arr@(RWCTyCon (TyConId s)) -> if s == "(->)"
+                                             then return arr
+                                             else liftM (RWCTyCon . TyConId) (qual s) 
                   (RWCTyApp t1 t2)       -> liftM2 RWCTyApp (qT t1) (qT t2)
                   t@(RWCTyVar _)         -> return t
                   (RWCTyComp t1 t2)      -> liftM2 RWCTyComp (qT t1) (qT t2)

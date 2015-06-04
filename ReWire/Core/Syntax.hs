@@ -290,6 +290,13 @@ data Import = Qualified       ImportName
               | UnqualifiedAs ImportName ImportName -- import i1 as i2
           deriving (Show,Eq,Ord)
 
+impName :: Import -> ImportName
+impName i = case i of
+              Qualified n -> n
+              Unqualified n -> n
+              QualifiedAs n _ -> n
+              UnqualifiedAs n _ -> n
+
 instance NFData Import where
   rnf i = case i of 
             Qualified imp       -> imp `deepseq` ()
