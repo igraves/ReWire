@@ -20,26 +20,25 @@ import ReWire.Core.Transformations.DeUniquify
 
 type Map = M.Map
 
-cmdQualify _ prog = (Just (qualify undefined prog),Nothing)
+cmdQualify _ prog = (Nothing,Just "Qualify disabled atm.")
 
-qualify :: Map ByteString ByteString -> RWCProg -> RWCProg
-qualify mp prog = case modname prog of
+qualify :: Map ByteString ByteString -> Map ByteString ByteString -> RWCProg -> RWCProg
+qualify terms types prog = case modname prog of
                      Nothing -> error "Qualifying module with no module name"
                      Just mn -> let --mn' = (BS.unpack mn) ++ (fromString ".")
                                     (prog',_) = uniquify 0 prog 
-                                    prog'' = runReader (qProg prog) (mp,mn,True)
+                                    prog'' = runReader (qProg prog) ((terms,types),mn,True)
                                  in deUniquify prog''
-
 --No local renaming
-qualify_ :: Map ByteString ByteString -> RWCProg -> RWCProg
-qualify_ mp prog = case modname prog of
+qualify_ :: Map ByteString ByteString -> Map ByteString ByteString -> RWCProg -> RWCProg
+qualify_ terms types prog = case modname prog of
                      Nothing -> error "Qualifying module with no module name"
                      Just mn -> let --mn' = (BS.unpack mn) ++ (fromString ".")
                                     (prog',_) = uniquify 0 prog 
-                                    prog'' = runReader (qProg prog) (mp,mn,False)
+                                    prog'' = runReader (qProg prog) ((terms,types),mn,False)
                                  in deUniquify prog''
 
-type QM = Reader (Map ByteString ByteString,ByteString,Bool)
+type QM = Reader ((Map ByteString ByteString,Map ByteString ByteString),ByteString,Bool)
 
 
 --TODO: This could be made stronger, but this may do well enough.
@@ -54,7 +53,7 @@ isQBS bs = case BS.length bs > 0 of
 qual :: String -> QM String
 qual s = do
            let s' = BS.pack s
-           (mp,pre,loc) <- ask
+           ((mp,_),pre,loc) <- ask
            case M.lookup s' mp of
                 Nothing  -> if loc 
                               then return $ (BS.unpack pre) ++ "." ++ s
@@ -64,17 +63,33 @@ qual s = do
 
 qualBS :: ByteString -> QM ByteString
 qualBS s = do 
-           (mp,pre,loc) <- ask
+           ((mp,_),pre,loc) <- ask
            case M.lookup s mp of
                 Nothing  -> if loc
                              then return $ pre `BS.append` "." `BS.append` s 
                              else return s
                 Just ql  -> return ql
-{-
-qualBS s = if isQBS s
-            then return s --if it's already qualified, don't qualify it
-            else liftM (`append` s) prefBS
--}
+
+qualTy :: String -> QM String
+qualTy s = do
+           let s' = BS.pack s
+           ((_,mp),pre,loc) <- ask
+           case M.lookup s' mp of
+                Nothing  -> if loc 
+                              then return $ (BS.unpack pre) ++ "." ++ s
+                              else return s
+                Just ql  -> return (BS.unpack ql)
+
+qualTyBS :: ByteString -> QM ByteString
+qualTyBS s = do
+               ((_,mp),pre,loc) <- ask
+               case M.lookup s mp of
+                    Nothing  -> if loc
+                                 then return $ pre `BS.append` "." `BS.append` s 
+                                 else return s
+                    Just ql  -> return ql
+               
+
 rV ::  Id a -> QM (Id a)
 rV i@(Id k n) = if BS.elem '@' n
                  then return i
@@ -88,7 +103,7 @@ qT ty = do
                 case ty of
                   arr@(RWCTyCon (TyConId s)) -> if s == "(->)"
                                              then return arr
-                                             else liftM (RWCTyCon . TyConId) (qual s) 
+                                             else liftM (RWCTyCon . TyConId) (qualTy s) 
                   (RWCTyApp t1 t2)       -> liftM2 RWCTyApp (qT t1) (qT t2)
                   t@(RWCTyVar _)         -> return t
                   (RWCTyComp t1 t2)      -> liftM2 RWCTyComp (qT t1) (qT t2)

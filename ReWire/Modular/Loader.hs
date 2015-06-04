@@ -22,8 +22,6 @@ import ReWire.Core.Transformations.Mangle
 import Data.ByteString.Char8 (unpack)
 import qualified Data.ByteString.Char8 as BS
 
-import Debug.Trace
-
 import qualified Data.Traversable
 
 type Map = M.Map
@@ -68,16 +66,14 @@ putProg p = do
 
 procMod :: ModuleName -> RWL ([ImportName])
 procMod m = do
-              liftIO $ putStrLn "BARRRRRRRR"
               l <- isLoaded m
               case l of
                   True  -> return []
                   False -> do
-                             liftIO $ putStrLn "BAZZZZ"
                              main <- getProg
                              prog <- loadModule m
-                             modnames <- modNS prog
-                             let main' = (qualify modnames prog) >: main
+                             (term_names, type_names) <- modNS prog
+                             let main' = (qualify term_names type_names prog) >: main
                              addLoaded m
                              putProg main'
                              return (map impName $ imports prog)
@@ -85,12 +81,15 @@ procMod m = do
 idName :: Id a -> ByteString
 idName (Id _ n) = n
 
-modNS :: RWCProg -> RWL (Map ByteString ByteString)
+modNS :: RWCProg -> RWL (Map ByteString ByteString,Map ByteString ByteString)
 modNS prog = do
                let imps = imports prog
                maps <- mapM importNS imps
-               (!m) <- foldM (\acc item -> unionWithKeyM uf acc item) M.empty maps 
-               return m
+               let term_maps = map fst maps
+                   type_maps = map snd maps
+               term_map <- foldM (\acc item -> unionWithKeyM uf acc item) M.empty term_maps 
+               type_map <- foldM (\acc item -> unionWithKeyM uf acc item) M.empty type_maps 
+               return (term_map,type_map)
   where
     uf key v1 v2 = if v1 /= v2
                     then throwError $ "Ambiguous name: " ++ (BS.unpack key)
@@ -98,39 +97,56 @@ modNS prog = do
                 
                
 
-importNS :: Import -> RWL (Map ByteString ByteString)
+importNS :: Import -> RWL (Map ByteString ByteString,Map ByteString ByteString)
 importNS im = do
-              names <- moduleNames (impName im)
+              term_names <- moduleTermNames (impName im)
+              type_names <- moduleTypeNames (impName im)
               case im of
                 Qualified mn -> do
-                                  let names' = prefNames mn names
-                                  return $ M.fromList $ zip names' names'
+                                  let term_names' = prefNames mn term_names
+                                      type_names' = prefNames mn type_names
+                                  return $ (M.fromList $ zip term_names' term_names', M.fromList $ zip type_names' type_names')
+              
                 QualifiedAs mn as_ -> do
-                                        let val_names = prefNames mn names
-                                            key_names = prefNames as_ names
-                                        return $ M.fromList $ zip key_names val_names
+                                        let term_val_names = prefNames mn  term_names
+                                            term_key_names = prefNames as_ term_names
+                                            type_val_names = prefNames mn  type_names
+                                            type_key_names = prefNames as_ type_names
+                                        return $ (M.fromList $ zip term_key_names term_val_names,
+                                                  M.fromList $ zip type_key_names type_val_names)
                 Unqualified mn -> do
-                                    let qual_names = prefNames mn names
-                                        namelist = zip names qual_names ++ zip qual_names qual_names
-                                    return $ M.fromList namelist
+                                    let term_qual_names = prefNames mn term_names
+                                        term_namelist   = zip term_names term_qual_names ++ zip term_qual_names term_qual_names
+                                        type_qual_names = prefNames mn type_names
+                                        type_namelist   = zip type_names type_qual_names ++ zip type_qual_names type_qual_names
+                                    return $ (M.fromList term_namelist, M.fromList type_namelist)
                 UnqualifiedAs mn as_ -> do
-                                    let qual_names = prefNames as_ names
-                                        val_names  = prefNames mn names
-                                        namelist = zip names val_names ++ zip qual_names val_names
-                                    return $ M.fromList namelist
+                                    let term_qual_names = prefNames as_ term_names
+                                        term_val_names  = prefNames mn term_names
+                                        term_namelist = zip term_names term_val_names ++ zip term_qual_names term_val_names
+                                        type_qual_names = prefNames as_ type_names
+                                        type_val_names  = prefNames mn type_names
+                                        type_namelist = zip type_names type_val_names ++ zip type_qual_names type_val_names
+                                    return $ (M.fromList term_namelist,M.fromList type_namelist)
   where
     prefNames :: ByteString -> [ByteString] -> [ByteString]
     prefNames pref names = map (pref `BS.append` "." `BS.append`) names
 
-moduleNames :: ModuleName -> RWL [ByteString]
-moduleNames mn = do
+moduleTermNames :: ModuleName -> RWL [ByteString]
+moduleTermNames mn = do
                    prog <- loadModule mn
                    let defs = map (idName . defnName) $ defns prog 
                        cons = concatMap getCons $ dataDecls prog
-                       tys  = map getTys $ dataDecls prog
-                   return (defs ++ cons ++ tys) 
+                   return (defs ++ cons) 
   where
     getCons x = map (BS.pack . deDataConId . (\(RWCDataCon d _) -> d)) $ dataCons x
+
+moduleTypeNames :: ModuleName -> RWL [ByteString]
+moduleTypeNames mn = do
+                   prog <- loadModule mn
+                   let tys  = map getTys $ dataDecls prog
+                   return (tys) 
+  where
     getTys = (BS.pack . deTyConId . dataName) 
                    
 
@@ -176,9 +192,8 @@ loadImports :: FilePath -> RWCProg -> IO (Either String RWCProg)
 loadImports path prog = do 
                             let exp = runStateT (do
                                                     prog <- getProg
-                                                    modns <- modNS prog
-                                                    liftIO $ print modns
-                                                    let prog' = qualify_ modns prog
+                                                    (terms,types) <- modNS prog
+                                                    let prog' = qualify_ terms types prog
                                                     putProg prog'
                                                     loadMods (map impName $ imports prog')) (path, S.empty, prog)
                             res <- runExceptT exp
