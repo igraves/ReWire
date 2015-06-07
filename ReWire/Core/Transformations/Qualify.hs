@@ -27,7 +27,7 @@ qualify terms types prog = case modname prog of
                      Nothing -> error "Qualifying module with no module name"
                      Just mn -> let --mn' = (BS.unpack mn) ++ (fromString ".")
                                     (prog',_) = uniquify 0 prog 
-                                    prog'' = runReader (qProg prog) ((terms,types),mn,True)
+                                    prog'' = runReader (qProg prog') ((terms,types),mn,True)
                                  in deUniquify prog''
 --No local renaming
 qualify_ :: Map ByteString ByteString -> Map ByteString ByteString -> RWCProg -> RWCProg
@@ -35,7 +35,7 @@ qualify_ terms types prog = case modname prog of
                      Nothing -> error "Qualifying module with no module name"
                      Just mn -> let --mn' = (BS.unpack mn) ++ (fromString ".")
                                     (prog',_) = uniquify 0 prog 
-                                    prog'' = runReader (qProg prog) ((terms,types),mn,False)
+                                    prog'' = runReader (qProg prog') ((terms,types),mn,False)
                                  in deUniquify prog''
 
 type QM = Reader ((Map ByteString ByteString,Map ByteString ByteString),ByteString,Bool)
@@ -144,7 +144,7 @@ qDataCon :: RWCDataCon -> QM RWCDataCon
 qDataCon (RWCDataCon (DataConId id) tys) = liftM2 RWCDataCon (liftM DataConId $ qual id) (mapM qT tys)
 
 qData :: RWCData -> QM RWCData
-qData (RWCData (TyConId i) tys cons) = liftM3 RWCData (liftM TyConId $ qual i) (mapM rV tys) (mapM qDataCon cons)
+qData (RWCData (TyConId i) tys cons) = liftM3 RWCData (liftM TyConId $ qual i) (mapM return tys) (mapM qDataCon cons)
                                                 
 qProg :: RWCProg -> QM RWCProg
 qProg (RWCProg mn imp decls prims defns) = liftM3 (RWCProg mn imp) (mapM qData decls) (mapM qPrim prims) (mapM qDefn defns)
