@@ -89,7 +89,7 @@ kcTy (RWCTyCon i)      = do cas <- askCAssumps
 kcTy (RWCTyVar v)      = do as <- askAssumps
                             let mk = Map.lookup v as
                             case mk of
-                              Nothing -> fail $ "Unknown type variable: " ++ show v
+                              Nothing -> fail $ ("Unknown type variable: " ++ show v) ++ (show as)
                               Just k  -> return k
 kcTy (RWCTyComp tm tv) = do km <- kcTy tm
                             kv <- kcTy tv

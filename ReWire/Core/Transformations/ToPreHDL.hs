@@ -11,6 +11,7 @@ import ReWire.PreHDL.ToVHDL
 import ReWire.Core.Transformations.Types
 import ReWire.Core.Transformations.Monad
 import ReWire.Core.Transformations.Uniquify (uniquify)
+import ReWire.Core.Transformations.Mangle (mangle, mangler)
 import ReWire.Core.Syntax
 import ReWire.Scoping
 import Control.Monad.State
@@ -183,12 +184,15 @@ tyWidth t            = {-do twc <- getTyWidthCache
                                 RWCTyVar _    -> fail $ "tyWidth: type variable encountered"
                                 RWCTyComp _ _ -> fail $ "tyWidth: computation type encountered"
                                 RWCTyCon i    -> do
-                                  Just (TyConInfo (RWCData _ _ dcs)) <- lift $ lift $ queryT i
-                                  tagWidth <- getTagWidth i
-                                  cws      <- mapM (dataConWidth i) dcs
-                                  let size =  tagWidth + maximum cws
---                                  modifyTyWidthCache (Map.insert t size)
-                                  return size
+                                  res <- lift $ lift $ queryT i
+                                  case res of 
+                                      Nothing -> error $ "Couldn't compute queryT on " ++ (show i)
+                                      Just (TyConInfo (RWCData _ _ dcs)) -> do 
+                                                                               tagWidth <- getTagWidth i
+                                                                               cws      <- mapM (dataConWidth i) dcs
+                                                                               let size =  tagWidth + maximum cws
+                                                            --                 modifyTyWidthCache (Map.insert t size)
+                                                                               return size
                 where dataConWidth di (RWCDataCon i _) = do
                         fts <- getFieldTys i t
                         liftM sum (mapM tyWidth fts)
@@ -899,7 +903,8 @@ cmdToPre :: TransCommand
 cmdToPre _ p = (Nothing,Just (show (gotoElim $ cfgToProg $ eu $ (cfgFromRW p))))
 
 cmdToVHDL :: TransCommand
-cmdToVHDL _ p = (Nothing,Just (clVHDL (c2p (cfgCLExp p))))
+--cmdToVHDL _ p = (Nothing,Just (clVHDL (c2p (cfgCLExp (mangle mangler p)))))
+cmdToVHDL _ p = (Nothing,Just (clVHDL (c2p (cfgCLExp (p)))))
   where
     c2p (a,b,c,d,e) = (a,b,c,map (\(x,(y,z)) -> (x,(elimEmpty $ gotoElim $ cfgToProg y,z))) d,convNCLs p e)
 --cmdToVHDL _ p = (Nothing,Just (devsToVHDL ((cfgFromRW p))))

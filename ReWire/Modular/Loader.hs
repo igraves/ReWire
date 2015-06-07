@@ -17,13 +17,13 @@ import ReWire.Scoping (Id(..))
 import ReWire.Core.Parser
 import ReWire.Core.Syntax
 import ReWire.Core.Transformations.Qualify hiding (Map)
-import ReWire.Core.Transformations.Mangle
 
 import Data.ByteString.Char8 (unpack)
 import qualified Data.ByteString.Char8 as BS
 
 import qualified Data.Traversable
 
+type ByteString = BS.ByteString
 type Map = M.Map
 type LoadedModules = S.Set ModuleName
 type RWL a = StateT (FilePath, LoadedModules, RWCProg) ((ExceptT String) IO) a
@@ -199,5 +199,5 @@ loadImports path prog = do
                             res <- runExceptT exp
                             case res of
                                (Left s) -> return (Left s)
-                               (Right ((), (_,_,prog))) -> return (Right $ mangle mangler prog)
+                               (Right ((), (_,_,prog))) -> return (Right prog)
                                           
