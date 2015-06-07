@@ -154,7 +154,7 @@ loadModule :: ModuleName -> RWL RWCProg
 loadModule m = do 
                  let um = (unpack m)
                  base <- basePath
-                 let m' = base ++ "/" ++ (map (\x -> if x == '.' then '/' else x) um) ++ ".rwc"
+                 let m' = base ++ "/" ++ (map (\x -> if x == '.' then '/' else x) um) ++ ".rw"
                  f <- liftIO $ doesFileExist m'
                  case f of
                     False -> throwError $ "Module " ++ um ++ ": " ++ "Missing file.  Checked for " ++ m'
