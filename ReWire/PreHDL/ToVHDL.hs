@@ -217,7 +217,7 @@ toVHDL e p = "library ieee;\n"
         ++ "         output : out std_logic_vector (0 to " ++ show (outputSize (progHeader p)-1) ++ "));\n"
         ++ "end " ++ e ++ ";\n"
         ++ "\n"
-        ++ "architecture behavioral of " ++ e ++ "is\n"
+        ++ "architecture behavioral of " ++ e ++ " is\n"
         ++ indent ("type control_state is (" ++ intercalate "," (stateNames (progHeader p)) ++ ");\n")
         ++ indent (concatMap (++"\n") vFunProtos)
         ++ indent (concatMap (++"\n") vFunDefns)
