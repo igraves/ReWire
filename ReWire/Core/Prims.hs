@@ -40,8 +40,8 @@ prims = [(mkId "return",[mkId "a",mkId "m"]          :-> v "a" `mkArrow` RWCTyCo
          
          (mkId "parI", [mkId "i",mkId "o", mkId "a", mkId "j", mkId "p"] :->  RWCTyComp (reT (v "i") (v "o") ident) (v "a") `mkArrow`
                                                                               RWCTyComp (reT (v "j") (v "p") ident) (v "a") `mkArrow`
-                                                                              RWCTyComp (reT (c "Tuple2" `RWCTyApp` (v "i") `RWCTyApp` (v "j"))
-                                                                                        (c "Tuple2" `RWCTyApp` (v "o") `RWCTyApp` (v "p"))
+                                                                              RWCTyComp (reT (c "Types.Tuple2" `RWCTyApp` (v "i") `RWCTyApp` (v "j"))
+                                                                                        (c "Types.Tuple2" `RWCTyApp` (v "o") `RWCTyApp` (v "p"))
                                                                                         ident)
                                                                                         (v "a")),
 
