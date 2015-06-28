@@ -1,0 +1,72 @@
+module Main where
+
+
+data Maybe a is Nothing | Just a end
+data Bit is L | H end
+data Tuple2 a b is Tuple2 a b end
+data Unit is Unit end
+
+fst :: Tuple2 a b -> a
+is
+  \i -> case i of
+        {
+          (a,_) -> a
+        }
+end
+
+snd :: Tuple2 a b -> b
+is
+  \i -> case i of
+        {
+          (_,b) -> b
+        }
+end
+
+ffz :: Bit -> <ReT Bit Bit I><()>
+is
+  \i -> bind inp <- signal i
+     in ffz inp
+end
+
+fff :: <ReT Bit Bit I><()>
+is
+  ffz H 
+end
+
+{-
+start :: <ReT Bit Bit I><()>
+is
+  fff
+end
+
+start :: <ReT (Bit,Bit) Bit I><()>
+is
+    refoldT
+      (\o -> o)
+      (\o -> \i -> case i of
+                   {
+                      (H,b) -> Just b
+                      ;
+                      (L,b) -> Nothing
+                   })
+      fff
+      
+end
+-}
+
+
+start :: <ReT (Bit,Bit) Bit I><()>
+is
+    refoldT
+      (\o -> o)
+      (\o -> \i -> case i of
+                   {
+                      (H,b) -> Just b
+                      ;
+                      (L,b) -> Nothing
+                   })
+      fff
+      
+end
+
+
