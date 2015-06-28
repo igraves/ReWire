@@ -24,10 +24,13 @@ import ReWire.Scoping
 import ReWire.Core.Syntax
 import ReWire.PreHDL.Syntax (FunDefn)
 
+import Debug.Trace
+
 type Fun = RWCExp --FIXME: Not sure what makes sense here
 
 data CLTree f a  = Par [CLTree f a]
                  | ReFold f f (CLTree f a)
+                 | ReFoldT f f (CLTree f a)
                  | Leaf a 
                   deriving (Show)
                   
@@ -80,6 +83,9 @@ clExpr e = case ef of
                 RWCVar x _ | x == mkId "refold" -> case args of
                                                       (f1:f2:re:[]) -> ReFold f1 f2 (clExpr re)
                                                       _ -> error "clExpr: ReFold wrong # args."
+                RWCVar x _ | x == mkId "refoldT" -> case args of
+                                                       (f1:f2:re:[]) -> trace "REFOLDT FOUND" $ ReFoldT f1 f2 (clExpr re)
+                                                       _ -> error "clExpr: ReFoldT wrong # args."
                                                        
                 _ -> Leaf e
   where
@@ -99,6 +105,11 @@ rnCLExp (ReFold f1 f2 r) = do
                              r' <- rnCLExp r
                              lbl <- nextLabel
                              writeCL $ (lbl,ReFold f1 f2 r')
+                             return $ Leaf lbl
+rnCLExp (ReFoldT f1 f2 r) = do
+                             r' <- rnCLExp r
+                             lbl <- nextLabel
+                             writeCL $ (lbl,ReFoldT f1 f2 r')
                              return $ Leaf lbl
 
 flattenPars :: [CLExp] -> [CLExp]

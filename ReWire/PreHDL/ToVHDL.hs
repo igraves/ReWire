@@ -7,7 +7,6 @@ import ReWire.PreHDL.ConnectLogic
 import Data.List (intercalate)
 import qualified Data.Map.Strict as Map
 
-import Debug.Trace
 
 vTy (TyBits n) = "std_logic_vector(0 to " ++ show (n-1) ++ ")"
 vTy TyBoolean  = "boolean"
@@ -139,6 +138,51 @@ procCL m (n,(ReFold f1 f2 (Leaf dev))) = let (i,o) = case Map.lookup n m of
                                   ++ indent "dinput  <= fin(doutput,input);\n"
                                   ++ indent ("dev : entity work." ++ dev ++ "(behavioral)\n")
                                   ++ (indent . indent) ("port map (clk,dinput,doutput);\n\n")
+                                  ++ indent "output <= fout(doutput);\n"
+                                  ++ "\nend behavioral;\n"
+
+procCL m (n,(ReFoldT f1 f2 (Leaf dev))) = let (i,o) = case Map.lookup n m of
+                                                               Nothing -> error "procCL: Encountered an unknown reference on outer device name in refoldT."
+                                                               Just z  -> z
+                                              --This is the interior device
+                                              (ii,io) = case Map.lookup dev m of
+                                                               Nothing -> error "procCL: Encountered an unknown reference on inner device name in refoldT."
+                                                               Just z  -> z
+                                              f1' = f1 {funDefnName="fout"}
+                                              f2' = f2 {funDefnName="fin"}
+                                 in "library ieee;\n"
+                                  ++ "use ieee.std_logic_1164.all;\n"
+                                  ++ "-- Uncomment the following line if VHDL primitives are in use.\n"
+                                  ++ "use work.prims.all;\n"
+                                  ++ "entity " ++ n ++ " is\n"
+                                  ++ "  Port ( clk : in std_logic ;\n"
+                                  ++ "         input : in std_logic_vector (0 to " ++ show (i-1) ++ ");\n"
+                                  ++ "         output : out std_logic_vector (0 to " ++ show (o-1) ++ "));\n"
+                                  ++ "end " ++ n ++ ";\n"
+                                  ++ "architecture behavioral of " ++ n ++ " is\n"
+                                  ++ indent ("signal dinput  : std_logic_vector(0 to " ++ show (ii-1) ++ ");\n")
+                                  ++ indent ("signal doutput : std_logic_vector(0 to " ++ show (io-1) ++ ");\n")
+                                  ++ indent ("signal dclk : std_logic;\n")
+                                  ++ indent (concatMap vFunDefnProto [f1',f2']) ++ "\n"
+                                  ++ indent (concatMap vFunDefn [f1',f2']) ++ "\n"
+                                  ++ "begin\nprocess(clk)\n" 
+                                  ++ indent "variable clock_en : std_logic;\n"
+                                  ++ indent "variable minput : std_logic_vector (0 to " ++ show (i-1) ++ ");\n"
+                                  ++ indent "begin\n"
+                                  ++ indent "if rising_edge(clk) then\n"
+                                  ++ indent "minput := fin(doutput,input);\n"
+                                  ++ indent "clock_en := minput(0);\n" 
+                                  ++ (indent . indent) "if clock_en = '1' then\n"
+                                  ++ (indent . indent . indent) "dclk <= '1';\n"
+                                  ++ (indent . indent) "else\n"
+                                  ++ (indent . indent .indent) "dclk <= '0';\n"
+                                  ++ (indent . indent) "end if;\n"
+                                  ++ indent "end if;\n"
+                                  ++ indent (indent "dclk <= minput(0);\n")
+                                  ++ indent "dinput  <= minput(1 to " ++ (show (i-1)) ++ ");\n"
+                                  ++ indent "end process;\n"
+                                  ++ indent ("dev : entity work." ++ dev ++ "(behavioral)\n")
+                                  ++ (indent . indent) ("port map (dclk,dinput,doutput);\n\n")
                                   ++ indent "output <= fout(doutput);\n"
                                   ++ "\nend behavioral;\n"
 

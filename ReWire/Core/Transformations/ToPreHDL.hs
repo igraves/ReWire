@@ -818,6 +818,14 @@ cfgCLExp p_ = let (Leaf main_is, named_cl, devs) = runRW ctr p $ clexps
                                       owidth = dt t1
                                       iwidth = dt t2
                                   return (iwidth,owidth)
+        cTW rf@(ReFoldT f1 f2 se) = do
+                                  !res <- cTW se 
+                                  let t1 = snd $ flattenArrow $ typeOf f1
+                                      --The new input width is the second argument of the refold function
+                                      (_:t2:_) = fst $ flattenArrow $ typeOf f2
+                                      owidth = dt t1
+                                      iwidth = dt t2
+                                  return (iwidth,owidth)
 
 
 
@@ -1090,6 +1098,11 @@ compRefold e = case e of
                                               f2' <- refoldFunExpr f2
                                               r'  <- compRefold r
                                               return $ ReFold f1' f2' r'
+                        (ReFoldT f1 f2 r) -> do
+                                              f1' <- refoldFunExpr f1
+                                              f2' <- refoldFunExpr f2
+                                              r'  <- compRefold r
+                                              return $ ReFoldT f1' f2' r'
 
 refoldFunExpr :: RWCExp -> CGM FunDefn
 refoldFunExpr e = case ef of

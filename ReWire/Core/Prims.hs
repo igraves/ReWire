@@ -49,5 +49,13 @@ prims = [(mkId "return",[mkId "a",mkId "m"]          :-> v "a" `mkArrow` RWCTyCo
          (mkId "refold", [mkId "o",mkId "p", mkId "i", mkId "j", mkId "m", mkId "a"] :-> ((v "o") `mkArrow` (v "p")) `mkArrow`
                                                                                          ((v "o") `mkArrow` (v "j") `mkArrow` (v "i")) `mkArrow`
                                                                                          RWCTyComp (reT (v "i") (v "o") (v "m")) (v "a") `mkArrow`
-                                                                                         RWCTyComp (reT (v "j") (v "p") (v "m")) (v "a"))]
+                                                                                         RWCTyComp (reT (v "j") (v "p") (v "m")) (v "a")),
+         --refoldT :: (Monad m) => (o1 -> o2) -> (o1 -> i2 -> Maybe i1) -> ReacT i1 o1 m a -> ReacT i2 o2 m a
+         (mkId "refoldT", [mkId "o",mkId "p", mkId "i", mkId "j", mkId "m", mkId "a"] :-> ((v "o") `mkArrow` (v "p")) `mkArrow`
+                                                                                          ((v "o") `mkArrow` (v "j") `mkArrow` (c "Maybe" `RWCTyApp` (v "i"))) `mkArrow`
+                                                                                         RWCTyComp (reT (v "i") (v "o") (v "m")) (v "a") `mkArrow`
+                                                                                         RWCTyComp (reT (v "j") (v "p") (v "m")) (v "a"))
+
+
+         ]
 
