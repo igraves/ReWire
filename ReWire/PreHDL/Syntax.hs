@@ -56,14 +56,15 @@ instance Show RegDecl where
 --   F - flattened program
 --   S - structured program
 --
-data Cmd = Rem String                -- [CLFS] comment
-         | Assign Loc RHS            -- [CLFS] assignment
-         | NextState Int             -- [ LFS] next state assignment
-         | If BoolExp Cmd            -- [   S] if-then (no else)
-         | Seq Cmd Cmd               -- [CLFS] s1 ; s2
-         | Skip                      -- [CLFS] no-op
-         | Goto BoolExp Label        -- [  F ] conditional branch to label
-         | Lbl Label                 -- [  F ] label
+data Cmd = Rem String                         -- [CLFS] comment
+         | Assign Loc RHS                     -- [CLFS] assignment
+         | NextState Int                      -- [ LFS] next state assignment
+         | If BoolExp Cmd                     -- [   S] if-then (no else)
+         | Seq Cmd Cmd                        -- [CLFS] s1 ; s2
+         | Skip                               -- [CLFS] no-op
+         | Goto BoolExp Label                 -- [  F ] conditional branch to label
+         | Lbl Label                          -- [  F ] label
+         | CaseIf [(BoolExp,Cmd)]             --        if-then-else for function cases only
          deriving Eq
 
 data Bit = Zero | One deriving (Eq,Ord)
@@ -125,6 +126,21 @@ instance Show Cmd where
   show (Seq c1 c2)      = show c1 ++ "\n" ++ show c2
   show Skip             = "skip;"
   show (NextState n)    = "next state is " ++ show n ++ ";"
+  show (CaseIf [])      = "/* WARNING: EMPTY CaseIf */"
+  show (CaseIf [(b,c)]) = show c
+  show (CaseIf [(b1,c1),(_,c2)]) = "if " ++ show b1 ++ "{\n"
+                             ++ indent (show c1) ++ "} else {\n"
+                             ++ indent (show c2) ++ "}"
+  show (CaseIf bs) = let (b1,c1) = head bs
+                         elsfs   = (init . tail) bs
+                         (_,ec)  = last bs 
+                      in "if " ++ show b1 ++ "{\n" 
+                      ++ indent (show c1) ++ "}\n"
+                      ++ echain elsfs 
+                      ++ "else {\n"
+                      ++ indent (show ec) ++ "}\n"
+    where
+      echain es = concatMap (\(b,c) -> "elsif " ++ show b ++ "{\n" ++ indent (show c) ++ "}\n") es
 
 indent :: String -> String
 indent "" = ""

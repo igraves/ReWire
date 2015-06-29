@@ -1,0 +1,12 @@
+module Prim where
+
+data Unit is Unit end
+data Bit is Zero | One end
+data Tuple2 a b is Tuple2 a b end
+
+vhdl notter :: <ReT Bit Bit I> <()> is notter
+
+start :: <ReT (Bit,Bit) (Bit,Bit) I><()>
+is
+  parI notter notter 
+end

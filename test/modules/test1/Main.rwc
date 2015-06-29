@@ -5,7 +5,7 @@ import Types
 data Unit is Unit end
 
 
-not :: Types.Bit -> Types.Bit
+not :: Bit -> Bit
 is
   \x -> case x of
         {
