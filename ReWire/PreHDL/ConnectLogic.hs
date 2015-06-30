@@ -27,7 +27,7 @@ import ReWire.PreHDL.Syntax (FunDefn)
 import Debug.Trace
 
 type Fun = RWCExp --FIXME: Not sure what makes sense here
-
+type FunVHDLName = String
 data CLTree f a  = Par [CLTree f a]
                  | ReFold f f (CLTree f a)
                  | ReFoldT f f (CLTree f a)
@@ -36,11 +36,11 @@ data CLTree f a  = Par [CLTree f a]
                   
 type CLExp = CLTree Fun RWCExp
 type CLNamed = CLTree Fun String
-type CLFNamed = CLTree FunDefn String
+type CLFNamed = CLTree FunVHDLName String
 
 type NRe = (String, RWCExp) --Named Re computations that do not contain connect logic 
 type NCL = (String, CLNamed)
-type NCLF = (String, CLFNamed)
+type NCLF = (String, [FunDefn], CLFNamed)
 
 type CLM = WriterT [NCL] (WriterT [NRe] (StateT Int Identity))
 

@@ -1096,7 +1096,9 @@ convNCLs p_ ncls = runcgm
 convNCL :: NCL -> CGM NCLF
 convNCL (s,e) = do
                   e' <- compRefold e
-                  return (s,e')
+                  --Projecting fun defns out of the header
+                  funs  <- liftM funDefns getHeader
+                  return (s,funs,e')
 
 compRefold :: CLNamed -> CGM CLFNamed
 compRefold e = case e of
@@ -1115,38 +1117,42 @@ compRefold e = case e of
                                               r'  <- compRefold r
                                               return $ ReFoldT f1' f2' r'
 
-refoldFunExpr :: RWCExp -> CGM FunDefn
+refoldFunExpr :: RWCExp -> CGM String 
 refoldFunExpr e = case ef of
                        RWCApp _ _     -> fail "refoldFunExpr: app in function position (can't happen)"
                        RWCLiteral _   -> fail "refoldFunExpr: encountered literal"
                        RWCCon _ _     -> fail "refoldFunExpr: encountered constructor"
                        RWCCase _ _    -> fail "refoldFunExpr: encountered case"
                        RWCLet x el eb -> fail "refoldFunExpr: encountered let"
+                       RWCLam _ _ _   -> fail "refoldFunExpr: encountered Lam"
                          --(cel,lel) <- refoldFunExpr el
                          --(ceb,leb) <- binding x lel $ refoldFunExpr eb
                          --return (cel `mkSeq` ceb,leb)
+                       {-
                        e_@(RWCLam _ _ _)   -> do
                                                   let n = (mkId "rwlam")
                                                   fn          <- freshFunName n
                                                   let (xts,e) =  peelLambdas e_
                                                       xs      =  map fst xts
                                                       ts      =  map snd xts
-                                                  args        <- mapM freshLocArg ts
+                                                  --args        <- mapM freshLocArg ts
+                                                  args        <- mapM freshLocTy ts
                                                   psizes      <- mapM tyWidth ts
                                                   let xargs   =  zip xs args
                                                   h'          <- getHeader
                                                   let rds''   = regDecls h'
-                                                  (ce,re)     <- trace ("RDS VALUES PRIOR!!: " ++ show rds'') $ foldr (uncurry binding) (funExpr e) xargs
+                                                  (ce,re)     <- foldr (uncurry binding) (funExpr e) xargs
                                                   h'          <- getHeader
                                                   let rds     =  regDecls h'
-                                                      pds     =  trace ("RDS VALUES!!: " ++ show rds) $ zipWith RegDecl args (map TyBits psizes)
+                                                      pds     =  zipWith RegDecl args (map TyBits psizes)
                                                       {- FIXME: DEFENSIVE CODING-}
                                                       --rds'    =  filter (\x -> not (elem x pds)) rds
                                                       fd      =  FunDefn fn pds rds ce re
                                                   fm          <- getFunMap                                  
                                                   --putFunMap (Map.insert n fn fm)
                                                   return fd
-                       RWCVar x _     -> funDefn' x
+                       -}
+                       RWCVar x _     -> funDefn x
   where (ef:eargs) = flattenApp e
 
 {- FIXME: DEFENSIVE CODING -}
@@ -1161,7 +1167,7 @@ cheap_ty_eq (TyBits i) (TyBits j) = i == j
 cheap_ty_eq TyBoolean  TyBoolean = True
 cheap_ty_eq _ _ = False
 cheap_regdec_eq (RegDecl l1 t1) (RegDecl l2 t2) = l1 == l2 && t1 `cheap_ty_eq` t2
-
+{-
 funDefn' :: Id RWCExp -> CGM FunDefn 
 funDefn' n = do md <- lift $ lift $ queryG n
                 case md of
@@ -1187,7 +1193,7 @@ funDefn' n = do md <- lift $ lift $ queryG n
                        fm          <- getFunMap                                  
                        putFunMap (Map.insert n fn fm)
                        return fd
-
+-}
 cfgFromRW :: RWCProg -> CFG
 cfgFromRW p_ = fst $ runRW ctr p (runStateT (runReaderT doit env0) s0)
   where doit    = do cfgProg'

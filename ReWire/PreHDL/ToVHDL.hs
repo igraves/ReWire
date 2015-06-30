@@ -116,8 +116,8 @@ progVHDL ps = let entities = concatMap (\(s,(p,_)) -> toVHDL s p) ps
             in entities -- ++ main iwidth owidth ps
 
 procCL :: Map.Map String (Int,Int) -> NCLF -> String
-procCL m (n,(Par devs)) = let devs' = map devRefs devs 
-                              (i,o) = case Map.lookup n m of
+procCL m (n,_,(Par devs)) = let devs' = map devRefs devs 
+                                (i,o) = case Map.lookup n m of
                                             Nothing -> error $ "procCL: Encountered an unknown reference (non-leaf).  For: " ++ (show n)
                                             Just z  -> z
                            in pars i o n devs'
@@ -132,15 +132,15 @@ procCL m (n,(Par devs)) = let devs' = map devRefs devs
 
 
 
-procCL m (n,(ReFold f1 f2 (Leaf dev))) = let (i,o) = case Map.lookup n m of
+procCL m (n,fds,(ReFold f1 f2 (Leaf dev))) = let (i,o) = case Map.lookup n m of
                                                                Nothing -> error "procCL: Encountered an unknown reference on outer device name in refold."
                                                                Just z  -> z
-                                             --This is the interior device
-                                             (ii,io) = case Map.lookup dev m of
+                                                 --This is the interior device
+                                                 (ii,io) = case Map.lookup dev m of
                                                                Nothing -> error "procCL: Encountered an unknown reference on inner device name in refold."
                                                                Just z  -> z
-                                             f1' = f1 {funDefnName="fout"}
-                                             f2' = f2 {funDefnName="fin"}
+                                  --           f1' = f1 {funDefnName="fout"}
+                                  --           f2' = f2 {funDefnName="fin"}
                                  in "library ieee;\n"
                                   ++ "use ieee.std_logic_1164.all;\n"
                                   ++ "-- Uncomment the following line if VHDL primitives are in use.\n"
@@ -153,24 +153,24 @@ procCL m (n,(ReFold f1 f2 (Leaf dev))) = let (i,o) = case Map.lookup n m of
                                   ++ "architecture behavioral of " ++ n ++ " is\n"
                                   ++ indent ("signal dinput  : std_logic_vector(0 to " ++ show (ii-1) ++ ");\n")
                                   ++ indent ("signal doutput : std_logic_vector(0 to " ++ show (io-1) ++ ");\n")
-                                  ++ indent (concatMap vFunDefnProto [f1',f2']) ++ "\n"
-                                  ++ indent (concatMap vFunDefn [f1',f2']) ++ "\n"
+                                  ++ indent (concatMap vFunDefnProto fds) ++ "\n"
+                                  ++ indent (concatMap vFunDefn fds) ++ "\n"
                                   ++ "begin\n"
-                                  ++ indent "dinput  <= fin(doutput,input);\n"
+                                  ++ indent "dinput  <= " ++ f2 ++ "(doutput,input);\n"
                                   ++ indent ("dev : entity work." ++ dev ++ "(behavioral)\n")
                                   ++ (indent . indent) ("port map (clk,dinput,doutput);\n\n")
-                                  ++ indent "output <= fout(doutput);\n"
+                                  ++ indent "output <= " ++ f1 ++ "(doutput);\n"
                                   ++ "\nend behavioral;\n"
 
-procCL m (n,(ReFoldT f1 f2 (Leaf dev))) = let (i,o) = case Map.lookup n m of
+procCL m (n,fds,(ReFoldT f1 f2 (Leaf dev))) = let (i,o) = case Map.lookup n m of
                                                                Nothing -> error "procCL: Encountered an unknown reference on outer device name in refoldT."
                                                                Just z  -> z
-                                              --This is the interior device
-                                              (ii,io) = case Map.lookup dev m of
+                                                  --This is the interior device
+                                                  (ii,io) = case Map.lookup dev m of
                                                                Nothing -> error "procCL: Encountered an unknown reference on inner device name in refoldT."
                                                                Just z  -> z
-                                              f1' = f1 {funDefnName="fout"}
-                                              f2' = f2 {funDefnName="fin"}
+                                              --f1' = f1 {funDefnName="fout"}
+                                              --f2' = f2 {funDefnName="fin"}
                                  in "library ieee;\n"
                                   ++ "use ieee.std_logic_1164.all;\n"
                                   ++ "-- Uncomment the following line if VHDL primitives are in use.\n"
@@ -184,14 +184,14 @@ procCL m (n,(ReFoldT f1 f2 (Leaf dev))) = let (i,o) = case Map.lookup n m of
                                   ++ indent ("signal dinput  : std_logic_vector(0 to " ++ show (ii-1) ++ ");\n")
                                   ++ indent ("signal doutput : std_logic_vector(0 to " ++ show (io-1) ++ ");\n")
                                   ++ indent ("signal dclk : std_logic;\n")
-                                  ++ indent (concatMap vFunDefnProto [f1',f2']) ++ "\n"
-                                  ++ indent (concatMap vFunDefn [f1',f2']) ++ "\n"
+                                  ++ indent (concatMap vFunDefnProto fds) ++ "\n"
+                                  ++ indent (concatMap vFunDefn fds) ++ "\n"
                                   ++ "begin\nprocess(clk)\n" 
                                   ++ indent "variable clock_en : std_logic;\n"
                                   ++ indent "variable minput : std_logic_vector (0 to " ++ show (i-1) ++ ");\n"
                                   ++ indent "begin\n"
                                   ++ indent "if rising_edge(clk) then\n"
-                                  ++ indent "minput := fin(doutput,input);\n"
+                                  ++ indent "minput := " ++ f2 ++ "(doutput,input);\n"
                                   ++ indent "clock_en := minput(0);\n" 
                                   ++ (indent . indent) "if clock_en = '1' then\n"
                                   ++ (indent . indent . indent) "dclk <= '1';\n"
@@ -204,7 +204,7 @@ procCL m (n,(ReFoldT f1 f2 (Leaf dev))) = let (i,o) = case Map.lookup n m of
                                   ++ indent "end process;\n"
                                   ++ indent ("dev : entity work." ++ dev ++ "(behavioral)\n")
                                   ++ (indent . indent) ("port map (dclk,dinput,doutput);\n\n")
-                                  ++ indent "output <= fout(doutput);\n"
+                                  ++ indent "output <= " ++ f1 ++ "(doutput);\n"
                                   ++ "\nend behavioral;\n"
 
 procCL _ a  = error $ "procCL: Unhandled tree structure encountered: " ++ (show a)
