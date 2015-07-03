@@ -1,304 +1,1230 @@
-module Salsa20Cipher where
-import Control.Monad.Resumption.Reactive 
---import Prelude (undefined,Num)
-import Control.Monad.Identity
-
+module Main where
+--------------
+-- Shimming begins 
+--------------
+--import Prelude (Int(..))
 import Data.Bits
+--import Data.Functor.Identity
+import Control.Monad.Resumption.Reactive
+import Control.Concurrent.MVar
+import Data.Word
 
---Type shimming
-type Id = Identity
+import Data.Binary
+import Data.Binary.Put
+import Data.ByteString.Lazy hiding (zipWith,reverse,map,putStr,putStrLn)
 
---add function should primitive in VHDL
-add8 :: W8 -> W8 -> W8
-add8 = undefined
+type I = IO
+type ReT = ReacT
 
-add32 :: W32 -> W32 -> W32
-add32 = undefined
+bind = (>>=)
 
-xor32 :: W32 -> W32 -> W32
-xor32 = undefined
---End type shimming
+xb :: Bit -> Bit -> Bit
+xb High High = Low
+xb Low  Low  = Low
+xb _ _       = High
 
-data Bit = High | Low deriving Show
-data W8      = W8  Bit Bit Bit Bit Bit Bit Bit Bit deriving Show
-data W16     = W16 Bit Bit Bit Bit Bit Bit Bit Bit
-                   Bit Bit Bit Bit Bit Bit Bit Bit 
-data W32     = W32 Bit Bit Bit Bit Bit Bit Bit Bit
-                   Bit Bit Bit Bit Bit Bit Bit Bit
-                   Bit Bit Bit Bit Bit Bit Bit Bit
-                   Bit Bit Bit Bit Bit Bit Bit Bit 
+b2i :: Bit -> Word32 
+b2i High = 1
+b2i Low  = 0
 
-data Bytes16 = Bytes16 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 
+w8ToWord8 :: W8 -> Word8
+w8ToWord8 (W8 b7 b6 b5 b4 b3 b2 b1 b0) = sb b0 0 $ sb b1 1 $ sb b2 2 $ 
+                                         sb b3 3 $ sb b4 4 $ sb b5 5 $
+                                         sb b6 6 $ sb b7 7 $ 0
+  where
+    sb High i = flip setBit i
+    sb Low  _ = id
 
-data Bytes8  = Bytes8 W8 W8 W8 W8 W8 W8 W8 W8
-data Bytes64 = Bytes64 W8 W8 W8 W8 W8 W8 W8 W8 
-                       W8 W8 W8 W8 W8 W8 W8 W8 
-                       W8 W8 W8 W8 W8 W8 W8 W8 
-                       W8 W8 W8 W8 W8 W8 W8 W8 
-                       W8 W8 W8 W8 W8 W8 W8 W8 
-                       W8 W8 W8 W8 W8 W8 W8 W8 
-                       W8 W8 W8 W8 W8 W8 W8 W8 
-                       W8 W8 W8 W8 W8 W8 W8 W8 deriving Show
+w16ToWord16 :: W16 -> Word16
+w16ToWord16 (W16 b15 b14 b13 b12 b11 b10 b9 b8 b7 b6 b5 b4 b3 b2 b1 b0 ) = sb b0 0 $ sb b1 1 $ sb b2 2 $ 
+                                                                           sb b3 3 $ sb b4 4 $ sb b5 5 $
+                                                                           sb b6 6 $ sb b7 7 $ sb b8 8 $
+                                                                           sb b9 9 $ sb b10 10 $ sb b11 11 $
+                                                                           sb b12 12 $ sb b13 13 $ sb b14 14 $ sb b15 15 $ 0
+  where
+    sb High i = flip setBit i
+    sb Low  _ = id
 
+word8ToW8 :: Word8 -> W8
+word8ToW8 word8 = W8 (gb 7)
+                     (gb 6)
+                     (gb 5)
+                     (gb 4)
+                     (gb 3)
+                     (gb 2)
+                     (gb 1)
+                     (gb 0)
 
-data Words16 a = Words16 a a a a a a a a a a a a a a a a deriving Show
---Making my life a little easier for testing
+  where
+    gb i = if testBit word8 i 
+            then High
+            else Low
+
+word16ToW16 :: Word16 -> W16
+word16ToW16 word16 = W16 (gb 15)
+                         (gb 14)
+                         (gb 13)
+                         (gb 12)
+                         (gb 11)
+                         (gb 10)
+                         (gb 9)
+                         (gb 8)
+                         (gb 7)
+                         (gb 6)
+                         (gb 5)
+                         (gb 4)
+                         (gb 3)
+                         (gb 2)
+                         (gb 1)
+                         (gb 0)
+
+  where
+    gb i = if testBit word16 i 
+            then High
+            else Low
+
+add64 a b = listToBytes64 $ zipWith (+) (bytes64ToList a) (bytes64ToList b)
 
 instance Num W8 where
-   fromInteger n = W8 (bbit 0) (bbit 1) (bbit 2) (bbit 3) (bbit 4) (bbit 5) (bbit 6) (bbit 7)
-                  
-    where
-      bool2bit True  = High
-      bool2bit False = Low
+  a + b = word8ToW8 $ (w8ToWord8 a) + (w8ToWord8 b)
+  a * b = word8ToW8 $ (w8ToWord8 a) * (w8ToWord8 b)
+  abs x = word8ToW8 $ abs (w8ToWord8 x)
+  signum x = word8ToW8 $ signum (w8ToWord8 x)
+  negate x = word8ToW8 $ negate (w8ToWord8 x)
+  fromInteger x = word8ToW8 $ fromInteger x
 
-      bbit = bool2bit . (testBit n)
-   
+instance Enum W8 where
+  toEnum x   = word8ToW8 $ toEnum x
+  fromEnum x = fromEnum (w8ToWord8 x)
+
+instance Ord W8 where
+  compare z x = compare (w8ToWord8 z) (w8ToWord8 x)
+
+instance Real W8 where
+  toRational x = toRational (w8ToWord8 x)
+
+instance Integral W8 where
+  quotRem x y = let (l,r) = quotRem (w8ToWord8 x) (w8ToWord8 y)
+                 in (word8ToW8 l, word8ToW8 r)
+  toInteger a = toInteger (w8ToWord8 a)
+
+instance Num W32 where
+  a + b = word32ToW32 $ (w32ToWord32 a) + (w32ToWord32 b)
+  a * b = word32ToW32 $ (w32ToWord32 a) * (w32ToWord32 b)
+  abs x = word32ToW32 $ abs (w32ToWord32 x)
+  signum x = word32ToW32 $ signum (w32ToWord32 x)
+  negate x = word32ToW32 $ negate (w32ToWord32 x)
+  fromInteger x = word32ToW32 $ fromInteger x
+
+instance Enum W32 where
+  toEnum x   = word32ToW32 $ toEnum x
+  fromEnum x = fromEnum (w32ToWord32 x)
+
+instance Ord W32 where
+  compare z x = compare (w32ToWord32 z) (w32ToWord32 x)
+
+instance Real W32 where
+  toRational x = toRational (w32ToWord32 x)
+
+instance Integral W32 where
+  quotRem x y = let (l,r) = quotRem (w32ToWord32 x) (w32ToWord32 y)
+                 in (word32ToW32 l, word32ToW32 r)
+  toInteger a = toInteger (w32ToWord32 a)
+
+instance Show W8 where
+  show w8 = show (toInteger w8)
+
+instance Show W16 where
+  show w16 = show (w16ToWord16 w16)
+
+bytesZero = Bytes64
+                    0 0 0 0 0 0 0 0
+                    0 0 0 0 0 0 0 0
+                    0 0 0 0 0 0 0 0
+                    0 0 0 0 0 0 0 0
+                    0 0 0 0 0 0 0 0
+                    0 0 0 0 0 0 0 0
+                    0 0 0 0 0 0 0 0
+                    0 0 0 0 0 0 0 0
+
+bytesTest1 = Bytes64 211 159 13  115 76 55  82  183 3   117 222 37  191 187 234 136 --
+                     49  237 179 48  1  106 178 219 175 199 166 48  86  16  179 207 --
+                     31  240 32  63  15 83  93  161 116 147 48  113 238 55  204 36  --
+                     79  201 235 79  3  81  156 47  203 26  244 243 88  118 104 54  --
+
+w32ToWord32 :: W32 -> Word32
+w32ToWord32 (W32  b31 b30 b29 b28 b27 b26 b25 b24
+                  b23 b22 b21 b20 b19 b18 b17 b16
+                  b15 b14 b13 b12 b11 b10 b9  b8
+                  b7  b6  b5  b4  b3  b2  b1  b0) = (b2i b0  0)  $ 
+                                                     (b2i b1  1)  $
+                                                     (b2i b2  2)  $
+                                                     (b2i b3  3)  $
+                                                     (b2i b4  4)  $
+                                                     (b2i b5  5)  $
+                                                     (b2i b6  6)  $
+                                                     (b2i b7  7)  $
+                                                     (b2i b8  8)  $
+                                                     (b2i b9  9)  $
+                                                     (b2i b10 10) $
+                                                     (b2i b11 11) $
+                                                     (b2i b12 12) $
+                                                     (b2i b13 13) $
+                                                     (b2i b14 14) $
+                                                     (b2i b15 15) $
+                                                     (b2i b16 16) $
+                                                     (b2i b17 17) $
+                                                     (b2i b18 18) $
+                                                     (b2i b19 19) $
+                                                     (b2i b20 20) $
+                                                     (b2i b21 21) $
+                                                     (b2i b22 22) $
+                                                     (b2i b23 23) $
+                                                     (b2i b24 24) $
+                                                     (b2i b25 25) $ 
+                                                     (b2i b26 26) $  
+                                                     (b2i b27 27) $
+                                                     (b2i b28 28) $ 
+                                                     (b2i b29 29) $
+                                                     (b2i b30 30) $
+                                                     (b2i b31 31) 0
+      where
+        b2i Low  _ = id
+        b2i High i = flip setBit i 
+
+word32ToW32 :: Word32 -> W32
+word32ToW32 i = W32 (getbit 31)
+                    (getbit 30)
+                    (getbit 29)
+                    (getbit 28)
+                    (getbit 27)
+                    (getbit 26)
+                    (getbit 25)
+                    (getbit 24)
+                    (getbit 23)
+                    (getbit 22)
+                    (getbit 21)
+                    (getbit 20)
+                    (getbit 19)
+                    (getbit 18)
+                    (getbit 17)
+                    (getbit 16)
+                    (getbit 15)
+                    (getbit 14)
+                    (getbit 13)
+                    (getbit 12)
+                    (getbit 11)
+                    (getbit 10)
+                    (getbit 9)
+                    (getbit 8)
+                    (getbit 7)
+                    (getbit 6)
+                    (getbit 5)
+                    (getbit 4)
+                    (getbit 3)
+                    (getbit 2)
+                    (getbit 1)
+                    (getbit 0)
+  where
+    getbit = conv . (testBit i)
+    conv True  = High
+    conv False = Low 
+
+add32 a b = word32ToW32 $ (w32ToWord32 a) + (w32ToWord32 b)
+xor32 a b = word32ToW32 $ (w32ToWord32 a) `xor` (w32ToWord32 b)
+
+bytes64ToList :: Bytes64 -> [W8]
+bytes64ToList (Bytes64 b0 b1 b2 b3 b4 b5 b6 b7
+                       b8 b9 b10 b11 b12 b13 b14 b15
+                       b16 b17 b18 b19 b20 b21 b22 b23 
+                       b24 b25 b26 b27 b28 b29 b30 b31
+                       b32 b33 b34 b35 b36 b37 b38 b39
+                       b40 b41 b42 b43 b44 b45 b46 b47
+                       b48 b49 b50 b51 b52 b53 b54 b55 
+                       b56 b57 b58 b59 b60 b61 b62 b63) = [b0,b1,b2,b3,b4,b5,b6,b7,b8,b9,b10,b11,b12,b13,b14,b15,b16,b17,b18,b19,b20,b21,b22,b23,b24,b25,b26,b27,b28,b29,b30,b31,b32,b33,b34,b35,b36,b37,b38,b39,b40,b41,b42,b43,b44,b45,b46,b47,b48,b49,b50,b51,b52,b53,b54,b55,b56,b57,b58,b59,b60,b61,b62,b63]
+
+listToBytes64 :: [W8] -> Bytes64
+listToBytes64 [b0,b1,b2,b3,b4,b5,b6,b7,b8,b9,b10,b11,b12,b13,b14,b15,b16,b17,b18,b19,b20,b21,b22,b23,b24,b25,b26,b27,b28,b29,b30,b31,b32,b33,b34,b35,b36,b37,b38,b39,b40,b41,b42,b43,b44,b45,b46,b47,b48,b49,b50,b51,b52,b53,b54,b55,b56,b57,b58,b59,b60,b61,b62,b63] =
+                      (Bytes64 b0 b1 b2 b3 b4 b5 b6 b7
+                       b8 b9 b10 b11 b12 b13 b14 b15
+                       b16 b17 b18 b19 b20 b21 b22 b23 
+                       b24 b25 b26 b27 b28 b29 b30 b31
+                       b32 b33 b34 b35 b36 b37 b38 b39
+                       b40 b41 b42 b43 b44 b45 b46 b47
+                       b48 b49 b50 b51 b52 b53 b54 b55 
+                       b56 b57 b58 b59 b60 b61 b62 b63) 
+                       
+
+xorW8 :: W8 -> W8 -> W8
+xorW8 (W8 a0 a1 a2 a3 a4 a5 a6 a7) 
+      (W8 b0 b1 b2 b3 b4 b5 b6 b7) = W8 (xb a0 b0)
+                                     (xb a1 b1)
+                                     (xb a2 b2)
+                                     (xb a3 b3)
+                                     (xb a4 b4)
+                                     (xb a5 b5)
+                                     (xb a6 b6)
+                                     (xb a7 b7)
+
+xor512 :: Bytes64 -> Bytes64 -> Bytes64
+xor512 a b = listToBytes64 $ zipWith xorW8 (bytes64ToList a) (bytes64ToList b) 
 
 
---Constant Values for initialization
+instance Show W32 where
+  show w32 = show (w32ToWord32 w32)
 
---(101,120,112,97)
-sigma0 = (W8 High Low High Low Low High High Low,W8 Low Low Low High High High High Low,W8 Low Low Low Low High High High Low,W8 High Low Low Low Low High High Low)
---(110,100,32,51)
-sigma1 = (W8 Low High High High Low High High Low,W8 Low Low High Low Low High High Low,W8 Low Low Low Low Low High Low Low,W8 High High Low Low High High Low Low) 
---(50,45,98,121)
-sigma2 = (W8 Low High Low Low High High Low Low,W8 High Low High High Low High Low Low,W8 Low High Low Low Low High High Low,W8 High Low Low High High High High Low)
---(116,101,32,107)
-sigma3 = (W8 Low Low High Low High High High Low,W8 High Low High Low Low High High Low,W8 Low Low Low Low Low High Low Low,W8 High High Low High Low High High Low)
-
---(101,120,112,97)
-tau0 = (W8 High Low High Low Low High High Low,W8 Low Low Low High High High High Low,W8 Low Low Low Low High High High Low,W8 High Low Low Low Low High High Low)
---(110,100,32,49)
-tau1 = (W8 Low High High High Low High High Low,W8 Low Low High Low Low High High Low,W8 Low Low Low Low Low High Low Low,W8 High Low Low Low High High Low Low)
---(54,45,98,121)
-tau2 = (W8 Low High High Low High High Low Low,W8 High Low High High Low High Low Low,W8 Low High Low Low Low High High Low,W8 High Low Low High High High High Low)
---(116,101,32,107)
-tau3 = (W8 Low Low High Low High High High Low,W8 High Low High Low Low High High Low,W8 Low Low Low Low Low High Low Low,W8 High High Low High Low High High Low)
-
---Primitives
-type Message = Bytes64
-type Key = Bytes16
-type Nonce = Bytes8
-type Count = Bytes8
-type Offset = Count
-type Ciphertext = Bytes64
-
---Machine Messages
-data Rsp = Init Key Key Nonce | Encrypt Message Offset | Complete
-data Req = IReady | EReady | ReadyEmit Ciphertext | Busy
-
---The salsa ReactT
-type ReSalsa = ReacT Req Rsp Id
-
-rot7  (W32 b0  b1  b2  b3  b4  b5  b6  b7  
-           b8  b9  b10 b11 b12 b13 b14 b15 
-           b16 b17 b18 b19 b20 b21 b22 b23 
-           b24 b25 b26 b27 b28 b29 b30 b31) = W32 b7 b8 b9 b10 b11 b12 b13 b14 
-                                                  b15 b16 b17 b18 b19 b20 b21 b22 
-                                                  b23 b24 b25 b26 b27 b28 b29 b30 
-                                                  b31 b0 b1 b2 b3 b4 b5 b6
-rot9  (W32 b0  b1  b2  b3  b4  b5  b6  b7  
-           b8  b9  b10 b11 b12 b13 b14 b15 
-           b16 b17 b18 b19 b20 b21 b22 b23 
-           b24 b25 b26 b27 b28 b29 b30 b31) = W32 b9  b10 b11 b12 b13 b14 b15 b16
-                                                  b17 b18 b19 b20 b21 b22 b23 b24 
-                                                  b25 b26 b27 b28 b29 b30 b31 b0
-                                                  b1  b2  b3  b4  b5  b6  b7  b8
-rot13  (W32 b0  b1  b2  b3  b4  b5  b6  b7  
-            b8  b9  b10 b11 b12 b13 b14 b15 
-            b16 b17 b18 b19 b20 b21 b22 b23 
-            b24 b25 b26 b27 b28 b29 b30 b31) = W32 b13 b14 b15 b16 b17 b18 b19 b20
-                                                   b21 b22 b23 b24 b25 b26 b27 b28
-                                                   b29 b30 b31 b0  b1  b2  b3  b4
-                                                   b5  b6  b7  b8  b9  b10 b11 b12
-rot18  (W32 b0  b1  b2  b3  b4  b5  b6  b7  
-            b8  b9  b10 b11 b12 b13 b14 b15 
-            b16 b17 b18 b19 b20 b21 b22 b23 
-            b24 b25 b26 b27 b28 b29 b30 b31) = W32 b18 b19 b20 b21 b22 b23 b24 b25
-                                                   b26 b27 b28 b29 b30 b31 b0  b1
-                                                   b2  b3  b4  b5  b6  b7  b8  b9 
-                                                   b10 b11 b12 b13 b14 b15 b16 b17
-expwords :: (Words16 W32) -> Bytes64
-expwords (Words16 a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15) = let 
-                                                                                (b0,b1,b2,b3)       = littleendian' a0
-                                                                                (b4,b5,b6,b7)       = littleendian' a1
-                                                                                (b8,b9,b10,b11)     = littleendian' a2
-                                                                                (b12,b13,b14,b15)   = littleendian' a3
-                                                                                (b16,b17,b18,b19)   = littleendian' a4
-                                                                                (b20,b21,b22,b23)   = littleendian' a5
-                                                                                (b24,b25,b26,b27)   = littleendian' a6
-                                                                                (b28,b29,b30,b31)   = littleendian' a7
-                                                                                (b32,b33,b34,b35)   = littleendian' a8
-                                                                                (b36,b37,b38,b39)   = littleendian' a9
-                                                                                (b40,b41,b42,b43)   = littleendian' a10
-                                                                                (b44,b45,b46,b47)   = littleendian' a11
-                                                                                (b48,b49,b50,b51)   = littleendian' a12
-                                                                                (b52,b53,b54,b55)   = littleendian' a13
-                                                                                (b56,b57,b58,b59)   = littleendian' a14
-                                                                                (b60,b61,b62,b63)   = littleendian' a15
-                                                                      in Bytes64 b0 b1 b2 b3 b4 b5 b6 b7 b8 b9 b10 b11 b12 b13 b14 b15 b16 b17 b18 b19 b20 b21 b22 b23 b24 b25 b26 b27 b28 b29 b30 b31 b32 b33 b34 b35 b36 b37 b38 b39 b40 b41 b42 b43 b44 b45 b46 b47 b48 b49 b50 b51 b52 b53 b54 b55 b56 b57 b58 b59 b60 b61 b62 b63
-
-impwords :: Bytes64 -> (Words16 W32)
-impwords (Bytes64 a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 a16 
-                  a17 a18 a19 a20 a21 a22 a23 a24 a25 a26 a27 a28 a29 a30 a31 
-                  a32 a33 a34 a35 a36 a37 a38 a39 a40 a41 a42 a43 a44 a45 a46 
-                  a47 a48 a49 a50 a51 a52 a53 a54 a55 a56 a57 a58 a59 a60 a61 a62 a63) = let 
-                                                                                                      b0 = littleendian (a0,a1,a2,a3)       
-                                                                                                      b1 = littleendian (a4,a5,a6,a7)       
-                                                                                                      b2 = littleendian (a8,a9,a10,a11)     
-                                                                                                      b3 = littleendian (a12,a13,a14,a15)   
-                                                                                                      b4 = littleendian (a16,a17,a18,a19)   
-                                                                                                      b5 = littleendian (a20,a21,a22,a23)   
-                                                                                                      b6 = littleendian (a24,a25,a26,a27)   
-                                                                                                      b7 = littleendian (a28,a29,a30,a31)   
-                                                                                                      b8 = littleendian (a32,a33,a34,a35)   
-                                                                                                      b9 = littleendian (a36,a37,a38,a39)   
-                                                                                                      b10 = littleendian (a40,a41,a42,a43)   
-                                                                                                      b11 = littleendian (a44,a45,a46,a47)   
-                                                                                                      b12 = littleendian (a48,a49,a50,a51)   
-                                                                                                      b13 = littleendian (a52,a53,a54,a55)   
-                                                                                                      b14 = littleendian (a56,a57,a58,a59)   
-                                                                                                      b15 = littleendian (a60,a61,a62,a63)   
-                                                                                          in Words16 b0 b1 b2 b3 b4 b5 b6 b7 b8 b9 b10 b11 b12 b13 b14 b15
-
-w8to16le :: W8 -> W8 -> W16
-w8to16le (W8 b0 b1 b2 b3 b4 b5 b6 b7) (W8 b8 b9 b10 b11 b12 b13 b14 b15) = W16 b8 b9 b10 b11 b12 b13 b14 b15 b0 b1 b2 b3 b4 b5 b6 b7
-
-w16tow32le :: W16 -> W16 -> W32
-w16tow32le (W16 b0 b1 b2 b3 b4 b5 b6 b7 b8 b9 b10 b11 b12 b13 b14 b15) (W16 c0 c1 c2 c3 c4 c5 c6 c7 c8 c9 c10 c11 c12 c13 c14 c15) = W32 b0 b1 b2 b3 b4 b5 b6 b7 b8 b9 b10 b11 b12 b13 b14 b15
-                                                                                                                                        c0 c1 c2 c3 c4 c5 c6 c7 c8 c9 c10 c11 c12 c13 c14 c15
---Converting 4-bytes in ascending order to a 32-bit little endian word 
-littleendian :: (W8,W8,W8,W8) -> W32
-littleendian (b0,b1,b2,b3) = w16tow32le (w8to16le b3 b2) (w8to16le b1 b0)
-
---The numbers are reversed.  The "bit vector" is "big endian" or the leftmost bit is the most significant bit.
-littleendian' :: W32 -> (W8,W8,W8,W8)
-littleendian' (W32 a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 a16 a17 a18 a19 a20 a21 a22 a23 a24 a25 a26 a27 a28 a29 a30 a31) =
-              (W8 a24 a25 a26 a27 a28 a29 a30 a31,W8 a16 a17 a18 a19 a20 a21 a22 a23,W8 a8 a9 a10 a11 a12 a13 a14 a15, W8 a0 a1 a2 a3 a4 a5 a6 a7)
-
-
-quarterRound :: (W32,W32,W32,W32) -> (W32,W32,W32,W32)
-quarterRound (y0,y1,y2,y3) = let z1 = xor32 y1 (rot7 (add32 y0 y3))
-                                 z2 = xor32 y2 (rot9 (add32 z1 y0))
-                                 z3 = xor32 y3 (rot13 (add32 z2 z1))
-                                 z0 = xor32 y0 (rot18 (add32 z3 z2))
-                              in (z0,z1,z2,z3)
-
+--------------------------
+-- Shimming Ends
+--------------------------
+data Unit =
+    Unit
+data Bit =
+    Low| High deriving (Eq, Ord)
+data W8 =
+    W8 Bit Bit Bit Bit Bit Bit Bit Bit deriving (Eq)
+data W16 =
+    W16 Bit Bit Bit Bit Bit Bit Bit Bit Bit Bit Bit Bit Bit Bit Bit Bit
+data W32 =
+    W32 Bit Bit Bit Bit Bit Bit Bit Bit Bit Bit Bit Bit Bit Bit Bit Bit Bit Bit Bit Bit Bit Bit Bit Bit Bit Bit Bit Bit Bit Bit Bit Bit deriving (Eq)
+data Bytes16 =
+    Bytes16 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8
+data Bytes8 =
+    Bytes8 W8 W8 W8 W8 W8 W8 W8 W8
+data Bytes64 =
+    Bytes64 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 W8 deriving Show
+data Words16 a =
+    Words16 a a a a a a a a a a a a a a a a
+data Tuple2 a b =
+    Tuple2 a b
+data Tuple3 a b c =
+    Tuple3 a b c
+data Tuple4 a b c d =
+    Tuple4 a b c d
+data Tuple5 a b c d e =
+    Tuple5 a b c d e
+sigma0 :: Tuple4 W8 W8 W8 W8
+sigma0 =
+    ((((Tuple4 ((((((((W8 Low) High) High) Low) Low) High) Low) High))
+           ((((((((W8 Low) High) High) High) High) Low) Low) Low))
+          ((((((((W8 Low) High) High) High) Low) Low) Low) Low))
+         ((((((((W8 Low) High) High) Low) Low) Low) Low) High))
+sigma1 :: Tuple4 W8 W8 W8 W8
+sigma1 =
+    ((((Tuple4 ((((((((W8 Low) High) High) Low) High) High) High) Low))
+           ((((((((W8 Low) High) High) Low) Low) High) Low) Low))
+          ((((((((W8 Low) Low) High) Low) Low) Low) Low) Low))
+         ((((((((W8 Low) Low) High) High) Low) Low) High) High))
+sigma2 :: Tuple4 W8 W8 W8 W8
+sigma2 =
+    ((((Tuple4 ((((((((W8 Low) Low) High) High) Low) Low) High) Low))
+           ((((((((W8 Low) Low) High) Low) High) High) Low) High))
+          ((((((((W8 Low) High) High) Low) Low) Low) High) Low))
+         ((((((((W8 Low) High) High) High) High) Low) Low) High))
+sigma3 :: Tuple4 W8 W8 W8 W8
+sigma3 =
+    ((((Tuple4 ((((((((W8 Low) High) High) High) Low) High) Low) Low))
+           ((((((((W8 Low) High) High) Low) Low) High) Low) High))
+          ((((((((W8 Low) Low) High) Low) Low) Low) Low) Low))
+         ((((((((W8 Low) High) High) Low) High) Low) High) High))
+tau0 :: Tuple4 W8 W8 W8 W8
+tau0 =
+    ((((Tuple4 ((((((((W8 Low) High) High) Low) Low) High) Low) High))
+           ((((((((W8 Low) High) High) High) High) Low) Low) Low))
+          ((((((((W8 Low) High) High) High) Low) Low) Low) Low))
+         ((((((((W8 Low) High) High) Low) Low) Low) Low) High))
+tau1 :: Tuple4 W8 W8 W8 W8
+tau1 =
+    ((((Tuple4 ((((((((W8 Low) High) High) Low) High) High) High) Low))
+           ((((((((W8 Low) High) High) Low) Low) High) Low) Low))
+          ((((((((W8 Low) Low) High) Low) Low) Low) Low) Low))
+         ((((((((W8 Low) Low) High) High) Low) Low) Low) High))
+tau2 :: Tuple4 W8 W8 W8 W8
+tau2 =
+    ((((Tuple4 ((((((((W8 Low) Low) High) High) Low) High) High) Low))
+           ((((((((W8 Low) Low) High) Low) High) High) Low) High))
+          ((((((((W8 Low) High) High) Low) Low) Low) High) Low))
+         ((((((((W8 Low) High) High) High) High) Low) Low) High))
+tau3 :: Tuple4 W8 W8 W8 W8
+tau3 =
+    ((((Tuple4 ((((((((W8 Low) High) High) High) Low) High) Low) Low))
+           ((((((((W8 Low) High) High) Low) Low) High) Low) High))
+          ((((((((W8 Low) Low) High) Low) Low) Low) Low) Low))
+         ((((((((W8 Low) High) High) Low) High) Low) High) High))
+rot7 :: W32 -> W32
+rot7 =
+    (\ i -> (case i of
+                 {((W32 b31 b30 b29 b28 b27 b26 b25 b24 b23 b22 b21 b20 b19 b18 b17 b16 b15 b14 b13 b12 b11 b10 b9 b8 b7 b6 b5 b4 b3 b2 b1 b0)) -> ((((((((((((((((((((((((((((((((W32 b24)
+                                                                                                                                                                                      b23)
+                                                                                                                                                                                     b22)
+                                                                                                                                                                                    b21)
+                                                                                                                                                                                   b20)
+                                                                                                                                                                                  b19)
+                                                                                                                                                                                 b18)
+                                                                                                                                                                                b17)
+                                                                                                                                                                               b16)
+                                                                                                                                                                              b15)
+                                                                                                                                                                             b14)
+                                                                                                                                                                            b13)
+                                                                                                                                                                           b12)
+                                                                                                                                                                          b11)
+                                                                                                                                                                         b10)
+                                                                                                                                                                        b9)
+                                                                                                                                                                       b8)
+                                                                                                                                                                      b7)
+                                                                                                                                                                     b6)
+                                                                                                                                                                    b5)
+                                                                                                                                                                   b4)
+                                                                                                                                                                  b3)
+                                                                                                                                                                 b2)
+                                                                                                                                                                b1)
+                                                                                                                                                               b0)
+                                                                                                                                                              b31)
+                                                                                                                                                             b30)
+                                                                                                                                                            b29)
+                                                                                                                                                           b28)
+                                                                                                                                                          b27)
+                                                                                                                                                         b26)
+                                                                                                                                                        b25)}))
+rot9 :: W32 -> W32
+rot9 =
+    (\ i -> (case i of
+                 {((W32 b31 b30 b29 b28 b27 b26 b25 b24 b23 b22 b21 b20 b19 b18 b17 b16 b15 b14 b13 b12 b11 b10 b9 b8 b7 b6 b5 b4 b3 b2 b1 b0)) -> ((((((((((((((((((((((((((((((((W32 b22)
+                                                                                                                                                                                      b21)
+                                                                                                                                                                                     b20)
+                                                                                                                                                                                    b19)
+                                                                                                                                                                                   b18)
+                                                                                                                                                                                  b17)
+                                                                                                                                                                                 b16)
+                                                                                                                                                                                b15)
+                                                                                                                                                                               b14)
+                                                                                                                                                                              b13)
+                                                                                                                                                                             b12)
+                                                                                                                                                                            b11)
+                                                                                                                                                                           b10)
+                                                                                                                                                                          b9)
+                                                                                                                                                                         b8)
+                                                                                                                                                                        b7)
+                                                                                                                                                                       b6)
+                                                                                                                                                                      b5)
+                                                                                                                                                                     b4)
+                                                                                                                                                                    b3)
+                                                                                                                                                                   b2)
+                                                                                                                                                                  b1)
+                                                                                                                                                                 b0)
+                                                                                                                                                                b31)
+                                                                                                                                                               b30)
+                                                                                                                                                              b29)
+                                                                                                                                                             b28)
+                                                                                                                                                            b27)
+                                                                                                                                                           b26)
+                                                                                                                                                          b25)
+                                                                                                                                                         b24)
+                                                                                                                                                        b23)}))
+rot13 :: W32 -> W32
+rot13 =
+    (\ i -> (case i of
+                 {((W32 b31 b30 b29 b28 b27 b26 b25 b24 b23 b22 b21 b20 b19 b18 b17 b16 b15 b14 b13 b12 b11 b10 b9 b8 b7 b6 b5 b4 b3 b2 b1 b0)) -> ((((((((((((((((((((((((((((((((W32 b18)
+                                                                                                                                                                                      b17)
+                                                                                                                                                                                     b16)
+                                                                                                                                                                                    b15)
+                                                                                                                                                                                   b14)
+                                                                                                                                                                                  b13)
+                                                                                                                                                                                 b12)
+                                                                                                                                                                                b11)
+                                                                                                                                                                               b10)
+                                                                                                                                                                              b9)
+                                                                                                                                                                             b8)
+                                                                                                                                                                            b7)
+                                                                                                                                                                           b6)
+                                                                                                                                                                          b5)
+                                                                                                                                                                         b4)
+                                                                                                                                                                        b3)
+                                                                                                                                                                       b2)
+                                                                                                                                                                      b1)
+                                                                                                                                                                     b0)
+                                                                                                                                                                    b31)
+                                                                                                                                                                   b30)
+                                                                                                                                                                  b29)
+                                                                                                                                                                 b28)
+                                                                                                                                                                b27)
+                                                                                                                                                               b26)
+                                                                                                                                                              b25)
+                                                                                                                                                             b24)
+                                                                                                                                                            b23)
+                                                                                                                                                           b22)
+                                                                                                                                                          b21)
+                                                                                                                                                         b20)
+                                                                                                                                                        b19)}))
+rot18 :: W32 -> W32
+rot18 =
+    (\ i -> (case i of
+                 {((W32 b31 b30 b29 b28 b27 b26 b25 b24 b23 b22 b21 b20 b19 b18 b17 b16 b15 b14 b13 b12 b11 b10 b9 b8 b7 b6 b5 b4 b3 b2 b1 b0)) -> ((((((((((((((((((((((((((((((((W32 b13)
+                                                                                                                                                                                      b12)
+                                                                                                                                                                                     b11)
+                                                                                                                                                                                    b10)
+                                                                                                                                                                                   b9)
+                                                                                                                                                                                  b8)
+                                                                                                                                                                                 b7)
+                                                                                                                                                                                b6)
+                                                                                                                                                                               b5)
+                                                                                                                                                                              b4)
+                                                                                                                                                                             b3)
+                                                                                                                                                                            b2)
+                                                                                                                                                                           b1)
+                                                                                                                                                                          b0)
+                                                                                                                                                                         b31)
+                                                                                                                                                                        b30)
+                                                                                                                                                                       b29)
+                                                                                                                                                                      b28)
+                                                                                                                                                                     b27)
+                                                                                                                                                                    b26)
+                                                                                                                                                                   b25)
+                                                                                                                                                                  b24)
+                                                                                                                                                                 b23)
+                                                                                                                                                                b22)
+                                                                                                                                                               b21)
+                                                                                                                                                              b20)
+                                                                                                                                                             b19)
+                                                                                                                                                            b18)
+                                                                                                                                                           b17)
+                                                                                                                                                          b16)
+                                                                                                                                                         b15)
+                                                                                                                                                        b14)}))
+littleendian :: Tuple4 W8 W8 W8 W8 -> W32
+littleendian =
+    (\ i -> (case i of
+                 {((Tuple4 (W8 b7 b6 b5 b4 b3 b2 b1 b0) (W8 b15 b14 b13 b12 b11 b10 b9 b8) (W8 b23 b22 b21 b20 b19 b18 b17 b16) (W8 b31 b30 b29 b28 b27 b26 b25 b24))) -> ((((((((((((((((((((((((((((((((W32 b31)
+                                                                                                                                                                                                             b30)
+                                                                                                                                                                                                            b29)
+                                                                                                                                                                                                           b28)
+                                                                                                                                                                                                          b27)
+                                                                                                                                                                                                         b26)
+                                                                                                                                                                                                        b25)
+                                                                                                                                                                                                       b24)
+                                                                                                                                                                                                      b23)
+                                                                                                                                                                                                     b22)
+                                                                                                                                                                                                    b21)
+                                                                                                                                                                                                   b20)
+                                                                                                                                                                                                  b19)
+                                                                                                                                                                                                 b18)
+                                                                                                                                                                                                b17)
+                                                                                                                                                                                               b16)
+                                                                                                                                                                                              b15)
+                                                                                                                                                                                             b14)
+                                                                                                                                                                                            b13)
+                                                                                                                                                                                           b12)
+                                                                                                                                                                                          b11)
+                                                                                                                                                                                         b10)
+                                                                                                                                                                                        b9)
+                                                                                                                                                                                       b8)
+                                                                                                                                                                                      b7)
+                                                                                                                                                                                     b6)
+                                                                                                                                                                                    b5)
+                                                                                                                                                                                   b4)
+                                                                                                                                                                                  b3)
+                                                                                                                                                                                 b2)
+                                                                                                                                                                                b1)
+                                                                                                                                                                               b0)}))
+littleendianp :: W32 -> Tuple4 W8 W8 W8 W8
+littleendianp =
+    (\ i -> (case i of
+                 {((W32 a31 a30 a29 a28 a27 a26 a25 a24 a23 a22 a21 a20 a19 a18 a17 a16 a15 a14 a13 a12 a11 a10 a9 a8 a7 a6 a5 a4 a3 a2 a1 a0)) -> ((((Tuple4
+                                                                                                                                                           ((((((((W8  a7)
+                                                                                                                                                                      a6)
+                                                                                                                                                                     a5)
+                                                                                                                                                                    a4)
+                                                                                                                                                                   a3)
+                                                                                                                                                                  a2)
+                                                                                                                                                                 a1)
+                                                                                                                                                                a0))
+                                                                                                                                                          ((((((((W8  a15)
+                                                                                                                                                                     a14)
+                                                                                                                                                                    a13)
+                                                                                                                                                                   a12)
+                                                                                                                                                                  a11)
+                                                                                                                                                                 a10)
+                                                                                                                                                                a9)
+                                                                                                                                                               a8))
+                                                                                                                                                         ((((((((W8  a23)
+                                                                                                                                                                    a22)
+                                                                                                                                                                   a21)
+                                                                                                                                                                  a20)
+                                                                                                                                                                 a19)
+                                                                                                                                                                a18)
+                                                                                                                                                               a17)
+                                                                                                                                                              a16))
+                                                                                                                                                        ((((((((W8  a31)
+                                                                                                                                                                   a30)
+                                                                                                                                                                  a29)
+                                                                                                                                                                 a28)
+                                                                                                                                                                a27)
+                                                                                                                                                               a26)
+                                                                                                                                                              a25)
+                                                                                                                                                             a24))}))
+expwords :: Words16 W32 -> Bytes64
+expwords =
+    (\ i -> (case i of
+                 {((Words16 a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15)) -> (let x0 = (littleendianp
+                                                                                                            a0) in (let x1 = (littleendianp
+                                                                                                                                        a1) in (let x2 = (littleendianp
+                                                                                                                                                                    a2) in (let x3 = (littleendianp
+                                                                                                                                                                                                a3) in (let x4 = (littleendianp
+                                                                                                                                                                                                                            a4) in (let x5 = (littleendianp
+                                                                                                                                                                                                                                                        a5) in (let x6 = (littleendianp
+                                                                                                                                                                                                                                                                                    a6) in (let x7 = (littleendianp
+                                                                                                                                                                                                                                                                                                                a7) in (let x8 = (littleendianp
+                                                                                                                                                                                                                                                                                                                                            a8) in (let x9 = (littleendianp
+                                                                                                                                                                                                                                                                                                                                                                        a9) in (let x10 = (littleendianp
+                                                                                                                                                                                                                                                                                                                                                                                                     a10) in (let x11 = (littleendianp
+                                                                                                                                                                                                                                                                                                                                                                                                                                   a11) in (let x12 = (littleendianp
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                 a12) in (let x13 = (littleendianp
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               a13) in (let x14 = (littleendianp
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             a14) in (let x15 = (littleendianp
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           a15) in (case ((((((((((((((((Words16
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             x0)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            x1)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           x2)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          x3)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         x4)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        x5)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       x6)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      x7)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     x8)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    x9)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   x10)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  x11)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 x12)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                x13)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               x14)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              x15) of
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        {((Words16 (Tuple4 b0 b1 b2 b3) (Tuple4 b4 b5 b6 b7) (Tuple4 b8 b9 b10 b11) (Tuple4 b12 b13 b14 b15) (Tuple4 b16 b17 b18 b19) (Tuple4 b20 b21 b22 b23) (Tuple4 b24 b25 b26 b27) (Tuple4 b28 b29 b30 b31) (Tuple4 b32 b33 b34 b35) (Tuple4 b36 b37 b38 b39) (Tuple4 b40 b41 b42 b43) (Tuple4 b44 b45 b46 b47) (Tuple4 b48 b49 b50 b51) (Tuple4 b52 b53 b54 b55) (Tuple4 b56 b57 b58 b59) (Tuple4 b60 b61 b62 b63))) -> ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((Bytes64
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  b0)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 b1)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                b2)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               b3)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              b4)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             b5)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            b6)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           b7)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          b8)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         b9)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        b10)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       b11)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      b12)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     b13)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    b14)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   b15)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  b16)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 b17)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                b18)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               b19)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              b20)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             b21)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            b22)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           b23)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          b24)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         b25)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        b26)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       b27)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      b28)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     b29)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    b30)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   b31)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  b32)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 b33)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                b34)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               b35)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              b36)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             b37)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            b38)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           b39)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          b40)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         b41)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        b42)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       b43)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      b44)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     b45)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    b46)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   b47)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  b48)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 b49)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                b50)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               b51)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              b52)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             b53)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            b54)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           b55)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          b56)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         b57)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        b58)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       b59)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      b60)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     b61)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    b62)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   b63)})))))))))))))))))}))
+impwords :: Bytes64 -> Words16 W32
+impwords =
+    (\ i -> (case i of
+                 {((Bytes64 a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 a16 a17 a18 a19 a20 a21 a22 a23 a24 a25 a26 a27 a28 a29 a30 a31 a32 a33 a34 a35 a36 a37 a38 a39 a40 a41 a42 a43 a44 a45 a46 a47 a48 a49 a50 a51 a52 a53 a54 a55 a56 a57 a58 a59 a60 a61 a62 a63)) -> (let b0 = (littleendian
+                                                                                                                                                                                                                                                                                                            ((((Tuple4
+                                                                                                                                                                                                                                                                                                                    a0)
+                                                                                                                                                                                                                                                                                                                   a1)
+                                                                                                                                                                                                                                                                                                                  a2)
+                                                                                                                                                                                                                                                                                                                 a3)) in (let b1 = (littleendian
+                                                                                                                                                                                                                                                                                                                                              ((((Tuple4
+                                                                                                                                                                                                                                                                                                                                                      a4)
+                                                                                                                                                                                                                                                                                                                                                     a5)
+                                                                                                                                                                                                                                                                                                                                                    a6)
+                                                                                                                                                                                                                                                                                                                                                   a7)) in (let b2 = (littleendian
+                                                                                                                                                                                                                                                                                                                                                                                ((((Tuple4
+                                                                                                                                                                                                                                                                                                                                                                                        a8)
+                                                                                                                                                                                                                                                                                                                                                                                       a9)
+                                                                                                                                                                                                                                                                                                                                                                                      a10)
+                                                                                                                                                                                                                                                                                                                                                                                     a11)) in (let b3 = (littleendian
+                                                                                                                                                                                                                                                                                                                                                                                                                   ((((Tuple4
+                                                                                                                                                                                                                                                                                                                                                                                                                           a12)
+                                                                                                                                                                                                                                                                                                                                                                                                                          a13)
+                                                                                                                                                                                                                                                                                                                                                                                                                         a14)
+                                                                                                                                                                                                                                                                                                                                                                                                                        a15)) in (let b4 = (littleendian
+                                                                                                                                                                                                                                                                                                                                                                                                                                                      ((((Tuple4
+                                                                                                                                                                                                                                                                                                                                                                                                                                                              a16)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                             a17)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                            a18)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                           a19)) in (let b5 = (littleendian
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         ((((Tuple4
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 a20)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                a21)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               a22)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              a23)) in (let b6 = (littleendian
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            ((((Tuple4
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    a24)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   a25)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  a26)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 a27)) in (let b7 = (littleendian
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               ((((Tuple4
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       a28)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      a29)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     a30)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    a31)) in (let b8 = (littleendian
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  ((((Tuple4
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          a32)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         a33)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        a34)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       a35)) in (let b9 = (littleendian
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     ((((Tuple4
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             a36)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            a37)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           a38)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          a39)) in (let b10 = (littleendian
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         ((((Tuple4
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 a40)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                a41)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               a42)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              a43)) in (let b11 = (littleendian
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             ((((Tuple4
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     a44)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    a45)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   a46)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  a47)) in (let b12 = (littleendian
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 ((((Tuple4
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         a48)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        a49)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       a50)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      a51)) in (let b13 = (littleendian
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     ((((Tuple4
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             a52)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            a53)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           a54)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          a55)) in (let b14 = (littleendian
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         ((((Tuple4
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 a56)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                a57)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               a58)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              a59)) in (let b15 = (littleendian
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             ((((Tuple4
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     a60)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    a61)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   a62)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  a63)) in ((((((((((((((((Words16
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               b0)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              b1)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             b2)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            b3)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           b4)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          b5)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         b6)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        b7)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       b8)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      b9)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     b10)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    b11)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   b12)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  b13)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 b14)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                b15)))))))))))))))))}))
+quarterRound :: Tuple4 W32 W32 W32 W32 -> Tuple4 W32 W32 W32 W32
+quarterRound =
+    (\ i -> (case i of
+                 {((Tuple4 y0 y1 y2 y3)) -> (let z1 = ((xor32 y1)
+                                                                 (rot7
+                                                                      ((add32 y0)
+                                                                           y3))) in (let z2 = ((xor32
+                                                                                                          y2)
+                                                                                                         (rot9
+                                                                                                              ((add32
+                                                                                                                    z1)
+                                                                                                                   y0))) in (let z3 = ((xor32
+                                                                                                                                                  y3)
+                                                                                                                                                 (rot13
+                                                                                                                                                      ((add32
+                                                                                                                                                            z2)
+                                                                                                                                                           z1))) in (let z0 = ((xor32
+                                                                                                                                                                                          y0)
+                                                                                                                                                                                         (rot18
+                                                                                                                                                                                              ((add32
+                                                                                                                                                                                                    z3)
+                                                                                                                                                                                                   z2))) in ((((Tuple4
+                                                                                                                                                                                                                    z0)
+                                                                                                                                                                                                                   z1)
+                                                                                                                                                                                                                  z2)
+                                                                                                                                                                                                                 z3)))))}))
 rowRound :: Words16 W32 -> Words16 W32
-rowRound (Words16 y0 y1 y2 y3
-          y4 y5 y6 y7
-          y8 y9 y10 y11
-          y12 y13 y14 y15) = let (z0,z1,z2,z3)     = quarterRound(y0,y1,y2,y3)
-                                 (z5,z6,z7,z4)     = quarterRound(y5,y6,y7,y4)
-                                 (z10,z11,z8,z9)   = quarterRound(y10,y11,y8,y9)
-                                 (z15,z12,z13,z14) = quarterRound(y15,y12,y13,y14)
-                            in (Words16 z0 z1 z2 z3 z4 z5 z6 z7 z8 z9 z10 z11 z12 z13 z14 z15)
-
+rowRound =
+    (\ i -> (case i of
+                 {((Words16 y0 y1 y2 y3 y4 y5 y6 y7 y8 y9 y10 y11 y12 y13 y14 y15)) -> (let x0 = (quarterRound
+                                                                                                            ((((Tuple4
+                                                                                                                    y0)
+                                                                                                                   y1)
+                                                                                                                  y2)
+                                                                                                                 y3)) in (let x1 = (quarterRound
+                                                                                                                                              ((((Tuple4
+                                                                                                                                                      y5)
+                                                                                                                                                     y6)
+                                                                                                                                                    y7)
+                                                                                                                                                   y4)) in (let x2 = (quarterRound
+                                                                                                                                                                                ((((Tuple4
+                                                                                                                                                                                        y10)
+                                                                                                                                                                                       y11)
+                                                                                                                                                                                      y8)
+                                                                                                                                                                                     y9)) in (let x3 = (quarterRound
+                                                                                                                                                                                                                  ((((Tuple4
+                                                                                                                                                                                                                          y15)
+                                                                                                                                                                                                                         y12)
+                                                                                                                                                                                                                        y13)
+                                                                                                                                                                                                                       y14)) in (case ((((Tuple4
+                                                                                                                                                                                                                                              x0)
+                                                                                                                                                                                                                                             x1)
+                                                                                                                                                                                                                                            x2)
+                                                                                                                                                                                                                                           x3) of
+                                                                                                                                                                                                                                     {((Tuple4 (Tuple4 z0 z1 z2 z3) (Tuple4 z5 z6 z7 z4) (Tuple4 z10 z11 z8 z9) (Tuple4 z15 z12 z13 z14))) -> ((((((((((((((((Words16
+                                                                                                                                                                                                                                                                                                                                                                  z0)
+                                                                                                                                                                                                                                                                                                                                                                 z1)
+                                                                                                                                                                                                                                                                                                                                                                z2)
+                                                                                                                                                                                                                                                                                                                                                               z3)
+                                                                                                                                                                                                                                                                                                                                                              z4)
+                                                                                                                                                                                                                                                                                                                                                             z5)
+                                                                                                                                                                                                                                                                                                                                                            z6)
+                                                                                                                                                                                                                                                                                                                                                           z7)
+                                                                                                                                                                                                                                                                                                                                                          z8)
+                                                                                                                                                                                                                                                                                                                                                         z9)
+                                                                                                                                                                                                                                                                                                                                                        z10)
+                                                                                                                                                                                                                                                                                                                                                       z11)
+                                                                                                                                                                                                                                                                                                                                                      z12)
+                                                                                                                                                                                                                                                                                                                                                     z13)
+                                                                                                                                                                                                                                                                                                                                                    z14)
+                                                                                                                                                                                                                                                                                                                                                   z15)})))))}))
 columnRound :: Words16 W32 -> Words16 W32
-columnRound (Words16 x0 x1 x2 x3
-             x4 x5 x6 x7
-             x8 x9 x10 x11
-             x12 x13 x14 x15) = let (y0,y4,y8,y12)  = quarterRound(x0,x4,x8,x12)
-                                    (y5,y9,y13,y1)  = quarterRound(x5,x9,x13,x1)
-                                    (y10,y14,y2,y6) = quarterRound(x10,x14,x2,x6)
-                                    (y15,y3,y7,y11) = quarterRound(x15,x3,x7,x11)
-                              in (Words16 y0 y1 y2 y3 y4 y5 y6 y7 y8 y9 y10 y11 y12 y13 y14 y15)
-
-
+columnRound =
+    (\ i -> (case i of
+                 {((Words16 x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15)) -> (let z0 = (quarterRound
+                                                                                                            ((((Tuple4
+                                                                                                                    x0)
+                                                                                                                   x4)
+                                                                                                                  x8)
+                                                                                                                 x12)) in (let z1 = (quarterRound
+                                                                                                                                               ((((Tuple4
+                                                                                                                                                       x5)
+                                                                                                                                                      x9)
+                                                                                                                                                     x13)
+                                                                                                                                                    x1)) in (let z2 = (quarterRound
+                                                                                                                                                                                 ((((Tuple4
+                                                                                                                                                                                         x10)
+                                                                                                                                                                                        x14)
+                                                                                                                                                                                       x2)
+                                                                                                                                                                                      x6)) in (let z3 = (quarterRound
+                                                                                                                                                                                                                   ((((Tuple4
+                                                                                                                                                                                                                           x15)
+                                                                                                                                                                                                                          x3)
+                                                                                                                                                                                                                         x7)
+                                                                                                                                                                                                                        x11)) in (case ((((Tuple4
+                                                                                                                                                                                                                                               z0)
+                                                                                                                                                                                                                                              z1)
+                                                                                                                                                                                                                                             z2)
+                                                                                                                                                                                                                                            z3) of
+                                                                                                                                                                                                                                      {((Tuple4 (Tuple4 y0 y4 y8 y12) (Tuple4 y5 y9 y13 y1) (Tuple4 y10 y14 y2 y6) (Tuple4 y15 y3 y7 y11))) -> ((((((((((((((((Words16
+                                                                                                                                                                                                                                                                                                                                                                   y0)
+                                                                                                                                                                                                                                                                                                                                                                  y1)
+                                                                                                                                                                                                                                                                                                                                                                 y2)
+                                                                                                                                                                                                                                                                                                                                                                y3)
+                                                                                                                                                                                                                                                                                                                                                               y4)
+                                                                                                                                                                                                                                                                                                                                                              y5)
+                                                                                                                                                                                                                                                                                                                                                             y6)
+                                                                                                                                                                                                                                                                                                                                                            y7)
+                                                                                                                                                                                                                                                                                                                                                           y8)
+                                                                                                                                                                                                                                                                                                                                                          y9)
+                                                                                                                                                                                                                                                                                                                                                         y10)
+                                                                                                                                                                                                                                                                                                                                                        y11)
+                                                                                                                                                                                                                                                                                                                                                       y12)
+                                                                                                                                                                                                                                                                                                                                                      y13)
+                                                                                                                                                                                                                                                                                                                                                     y14)
+                                                                                                                                                                                                                                                                                                                                                    y15)})))))}))
 doubleRound :: Words16 W32 -> Words16 W32
-doubleRound x = rowRound(columnRound(x))
-
-
-salsaHash' :: Words16 W32 -> Words16 W32
-salsaHash' x@(Words16 x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15) =
-                  let (Words16 z0 z1 z2 z3 z4 z5 z6 z7 z8 z9 z10 z11 z12 z13 z14 z15) = doubleRound(doubleRound(doubleRound(doubleRound(doubleRound(doubleRound(doubleRound(doubleRound(doubleRound(doubleRound(x))))))))))
-               in Words16
-                    (add32 z0 x0)
-                    (add32 z1 x1)
-                    (add32 z2 x2)
-                    (add32 z3 x3)
-                    (add32 z4 x4)
-                    (add32 z5 x5)
-                    (add32 z6 x6)
-                    (add32 z7 x7)
-                    (add32 z8 x8)
-                    (add32 z9 x9)
-                    (add32 z10 x10)
-                    (add32 z11 x11)
-                    (add32 z12 x12)
-                    (add32 z13 x13)
-                    (add32 z14 x14)
-                    (add32 z15 x15)
-
-
+doubleRound =
+    (\ x -> (rowRound (columnRound x)))
+salsaHashp :: Words16 W32 -> Words16 W32
+salsaHashp =
+    (\ x -> (case x of
+                 {((Words16 x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15)) -> (case (doubleRound
+                                                                                                  (doubleRound
+                                                                                                       (doubleRound
+                                                                                                            (doubleRound
+                                                                                                                 (doubleRound
+                                                                                                                      (doubleRound
+                                                                                                                           (doubleRound
+                                                                                                                                (doubleRound
+                                                                                                                                     (doubleRound
+                                                                                                                                          (doubleRound
+                                                                                                                                               x)))))))))) of
+                                                                                            {((Words16 z0 z1 z2 z3 z4 z5 z6 z7 z8 z9 z10 z11 z12 z13 z14 z15)) -> ((((((((((((((((Words16
+                                                                                                                                                                                      ((add32
+                                                                                                                                                                                            z0)
+                                                                                                                                                                                           x0))
+                                                                                                                                                                                     ((add32
+                                                                                                                                                                                           z1)
+                                                                                                                                                                                          x1))
+                                                                                                                                                                                    ((add32
+                                                                                                                                                                                          z2)
+                                                                                                                                                                                         x2))
+                                                                                                                                                                                   ((add32
+                                                                                                                                                                                         z3)
+                                                                                                                                                                                        x3))
+                                                                                                                                                                                  ((add32
+                                                                                                                                                                                        z4)
+                                                                                                                                                                                       x4))
+                                                                                                                                                                                 ((add32
+                                                                                                                                                                                       z5)
+                                                                                                                                                                                      x5))
+                                                                                                                                                                                ((add32
+                                                                                                                                                                                      z6)
+                                                                                                                                                                                     x6))
+                                                                                                                                                                               ((add32
+                                                                                                                                                                                     z7)
+                                                                                                                                                                                    x7))
+                                                                                                                                                                              ((add32
+                                                                                                                                                                                    z8)
+                                                                                                                                                                                   x8))
+                                                                                                                                                                             ((add32
+                                                                                                                                                                                   z9)
+                                                                                                                                                                                  x9))
+                                                                                                                                                                            ((add32
+                                                                                                                                                                                  z10)
+                                                                                                                                                                                 x10))
+                                                                                                                                                                           ((add32
+                                                                                                                                                                                 z11)
+                                                                                                                                                                                x11))
+                                                                                                                                                                          ((add32
+                                                                                                                                                                                z12)
+                                                                                                                                                                               x12))
+                                                                                                                                                                         ((add32
+                                                                                                                                                                               z13)
+                                                                                                                                                                              x13))
+                                                                                                                                                                        ((add32
+                                                                                                                                                                              z14)
+                                                                                                                                                                             x14))
+                                                                                                                                                                       ((add32
+                                                                                                                                                                             z15)
+                                                                                                                                                                            x15))})}))
 salsaHash :: Bytes64 -> Bytes64
-salsaHash x = expwords (salsaHash' (impwords x))
-
---Build a 256-bit frame
---Includes the sigma paddings defined in the Salsa20 spec by Berstein
---This function should be PE'd up in the hand-cranked PE process
+salsaHash =
+    (\ x -> (expwords (salsaHashp (impwords x))))
 buildSalsa256 :: Bytes16 -> Bytes16 -> Bytes8 -> Bytes8 -> Bytes64
-buildSalsa256 (Bytes16 a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15) 
-              (Bytes16 b0 b1 b2 b3 b4 b5 b6 b7 b8 b9 b10 b11 b12 b13 b14 b15) 
-              (Bytes8  n0 n1 n2 n3 n4 n5 n6 n7) (Bytes8 n8 n9 n10 n11 n12 n13 n14 n15) = let (s0,s1,s2,s3)     = sigma0
-                                                                                             (s4,s5,s6,s7)     = sigma1
-                                                                                             (s8,s9,s10,s11)   = sigma2
-                                                                                             (s12,s13,s14,s15) = sigma3
-                                                                                 in 
-    salsaHash $
-      Bytes64 s0  s1  s2  s3  a0  a1  a2  a3  a4 a5 a6 a7  a8 a9 a10 a11 
-              a12 a13 a14 a15 s4  s5  s6  s7  n0 n1 n2 n3  n4  n5  n6 n7
-              n8  n9  n10 n11 n12 n13 n14 n15 s8 s9 s10 s11 b0  b1  b2 b3 
-              b4 b5 b6  b7 b8  b9  b10 b11 b12 b13 b14 b15 s12 s13 s14 s15 
-{-
---These are the device functions
-salsaInit :: ReSalsa ()
-salsaInit = signal IReady >>= (\rsp -> case rsp of
-                                             Init k0 k1 n -> salsaEncrypt k0 k1 n
-                                             _            -> salsaInit) -- Errors reset the state of the encryptor 
+buildSalsa256 =
+    (\ w -> (\ x -> (\ y -> (\ z -> (case ((((Tuple4 w) x) y) z) of
+                                         {((Tuple4 (Bytes16 a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15) (Bytes16 b0 b1 b2 b3 b4 b5 b6 b7 b8 b9 b10 b11 b12 b13 b14 b15) (Bytes8 n0 n1 n2 n3 n4 n5 n6 n7) (Bytes8 n8 n9 n10 n11 n12 n13 n14 n15))) -> (case ((((Tuple4
+                                                                                                                                                                                                                                                                              sigma0)
+                                                                                                                                                                                                                                                                             sigma1)
+                                                                                                                                                                                                                                                                            sigma2)
+                                                                                                                                                                                                                                                                           sigma3) of
+                                                                                                                                                                                                                                                                     {((Tuple4 (Tuple4 s0 s1 s2 s3) (Tuple4 s4 s5 s6 s7) (Tuple4 s8 s9 s10 s11) (Tuple4 s12 s13 s14 s15))) -> (salsaHash
+                                                                                                                                                                                                                                                                                                                                                                                   ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((Bytes64
+                                                                                                                                                                                                                                                                                                                                                                                                                                                       s0)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                      s1)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                     s2)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                    s3)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                   a0)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                  a1)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                 a2)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                a3)
+                                                                                                                                                                                                                                                                                                                                                                                                                                               a4)
+                                                                                                                                                                                                                                                                                                                                                                                                                                              a5)
+                                                                                                                                                                                                                                                                                                                                                                                                                                             a6)
+                                                                                                                                                                                                                                                                                                                                                                                                                                            a7)
+                                                                                                                                                                                                                                                                                                                                                                                                                                           a8)
+                                                                                                                                                                                                                                                                                                                                                                                                                                          a9)
+                                                                                                                                                                                                                                                                                                                                                                                                                                         a10)
+                                                                                                                                                                                                                                                                                                                                                                                                                                        a11)
+                                                                                                                                                                                                                                                                                                                                                                                                                                       a12)
+                                                                                                                                                                                                                                                                                                                                                                                                                                      a13)
+                                                                                                                                                                                                                                                                                                                                                                                                                                     a14)
+                                                                                                                                                                                                                                                                                                                                                                                                                                    a15)
+                                                                                                                                                                                                                                                                                                                                                                                                                                   s4)
+                                                                                                                                                                                                                                                                                                                                                                                                                                  s5)
+                                                                                                                                                                                                                                                                                                                                                                                                                                 s6)
+                                                                                                                                                                                                                                                                                                                                                                                                                                s7)
+                                                                                                                                                                                                                                                                                                                                                                                                                               n0)
+                                                                                                                                                                                                                                                                                                                                                                                                                              n1)
+                                                                                                                                                                                                                                                                                                                                                                                                                             n2)
+                                                                                                                                                                                                                                                                                                                                                                                                                            n3)
+                                                                                                                                                                                                                                                                                                                                                                                                                           n4)
+                                                                                                                                                                                                                                                                                                                                                                                                                          n5)
+                                                                                                                                                                                                                                                                                                                                                                                                                         n6)
+                                                                                                                                                                                                                                                                                                                                                                                                                        n7)
+                                                                                                                                                                                                                                                                                                                                                                                                                       n8)
+                                                                                                                                                                                                                                                                                                                                                                                                                      n9)
+                                                                                                                                                                                                                                                                                                                                                                                                                     n10)
+                                                                                                                                                                                                                                                                                                                                                                                                                    n11)
+                                                                                                                                                                                                                                                                                                                                                                                                                   n12)
+                                                                                                                                                                                                                                                                                                                                                                                                                  n13)
+                                                                                                                                                                                                                                                                                                                                                                                                                 n14)
+                                                                                                                                                                                                                                                                                                                                                                                                                n15)
+                                                                                                                                                                                                                                                                                                                                                                                                               s8)
+                                                                                                                                                                                                                                                                                                                                                                                                              s9)
+                                                                                                                                                                                                                                                                                                                                                                                                             s10)
+                                                                                                                                                                                                                                                                                                                                                                                                            s11)
+                                                                                                                                                                                                                                                                                                                                                                                                           b0)
+                                                                                                                                                                                                                                                                                                                                                                                                          b1)
+                                                                                                                                                                                                                                                                                                                                                                                                         b2)
+                                                                                                                                                                                                                                                                                                                                                                                                        b3)
+                                                                                                                                                                                                                                                                                                                                                                                                       b4)
+                                                                                                                                                                                                                                                                                                                                                                                                      b5)
+                                                                                                                                                                                                                                                                                                                                                                                                     b6)
+                                                                                                                                                                                                                                                                                                                                                                                                    b7)
+                                                                                                                                                                                                                                                                                                                                                                                                   b8)
+                                                                                                                                                                                                                                                                                                                                                                                                  b9)
+                                                                                                                                                                                                                                                                                                                                                                                                 b10)
+                                                                                                                                                                                                                                                                                                                                                                                                b11)
+                                                                                                                                                                                                                                                                                                                                                                                               b12)
+                                                                                                                                                                                                                                                                                                                                                                                              b13)
+                                                                                                                                                                                                                                                                                                                                                                                             b14)
+                                                                                                                                                                                                                                                                                                                                                                                            b15)
+                                                                                                                                                                                                                                                                                                                                                                                           s12)
+                                                                                                                                                                                                                                                                                                                                                                                          s13)
+                                                                                                                                                                                                                                                                                                                                                                                         s14)
+                                                                                                                                                                                                                                                                                                                                                                                        s15))})})))))
+key1 :: Bytes16
+key1 =
+    ((((((((((((((((Bytes16
+                        ((((((((W8 High) Low) Low) Low) Low) Low) Low) Low))
+                       ((((((((W8 Low) High) Low) Low) Low) Low) Low) Low))
+                      ((((((((W8 High) High) Low) Low) Low) Low) Low) Low))
+                     ((((((((W8 Low) Low) High) Low) Low) Low) Low) Low))
+                    ((((((((W8 High) Low) High) Low) Low) Low) Low) Low))
+                   ((((((((W8 Low) High) High) Low) Low) Low) Low) Low))
+                  ((((((((W8 High) High) High) Low) Low) Low) Low) Low))
+                 ((((((((W8 Low) Low) Low) High) Low) Low) Low) Low))
+                ((((((((W8 High) Low) Low) High) Low) Low) Low) Low))
+               ((((((((W8 Low) High) Low) High) Low) Low) Low) Low))
+              ((((((((W8 High) High) Low) High) Low) Low) Low) Low))
+             ((((((((W8 Low) Low) High) High) Low) Low) Low) Low))
+            ((((((((W8 High) Low) High) High) Low) Low) Low) Low))
+           ((((((((W8 Low) High) High) High) Low) Low) Low) Low))
+          ((((((((W8 High) High) High) High) Low) Low) Low) Low))
+         ((((((((W8 Low) Low) Low) Low) High) Low) Low) Low))
+key2 :: Bytes16
+key2 =
+    ((((((((((((((((Bytes16
+                        ((((((((W8 High) Low) Low) Low) High) Low) Low) Low))
+                       ((((((((W8 Low) High) Low) Low) High) Low) Low) Low))
+                      ((((((((W8 High) High) Low) Low) High) Low) Low) Low))
+                     ((((((((W8 Low) Low) High) Low) High) Low) Low) Low))
+                    ((((((((W8 High) Low) High) Low) High) Low) Low) Low))
+                   ((((((((W8 Low) High) High) Low) High) Low) Low) Low))
+                  ((((((((W8 High) High) High) Low) High) Low) Low) Low))
+                 ((((((((W8 Low) Low) Low) High) High) Low) Low) Low))
+                ((((((((W8 High) Low) Low) High) High) Low) Low) Low))
+               ((((((((W8 Low) High) Low) High) High) Low) Low) Low))
+              ((((((((W8 High) High) Low) High) High) Low) Low) Low))
+             ((((((((W8 Low) Low) High) High) High) Low) Low) Low))
+            ((((((((W8 High) Low) High) High) High) Low) Low) Low))
+           ((((((((W8 Low) High) High) High) High) Low) Low) Low))
+          ((((((((W8 High) High) High) High) High) Low) Low) Low))
+         ((((((((W8 Low) Low) Low) Low) Low) High) Low) Low))
+zerothoutput :: Bytes64
+zerothoutput =
+    ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((Bytes64
+                                                                        ((((((((W8 Low) Low) Low)
+                                                                                 Low)
+                                                                                Low)
+                                                                               Low)
+                                                                              Low)
+                                                                             Low))
+                                                                       ((((((((W8 Low) Low) Low)
+                                                                                Low)
+                                                                               Low)
+                                                                              Low)
+                                                                             Low)
+                                                                            Low))
+                                                                      ((((((((W8 Low) Low) Low) Low)
+                                                                              Low)
+                                                                             Low)
+                                                                            Low)
+                                                                           Low))
+                                                                     ((((((((W8 Low) Low) Low) Low)
+                                                                             Low)
+                                                                            Low)
+                                                                           Low)
+                                                                          Low))
+                                                                    ((((((((W8 Low) Low) Low) Low)
+                                                                            Low)
+                                                                           Low)
+                                                                          Low)
+                                                                         Low))
+                                                                   ((((((((W8 Low) Low) Low) Low)
+                                                                           Low)
+                                                                          Low)
+                                                                         Low)
+                                                                        Low))
+                                                                  ((((((((W8 Low) Low) Low) Low)
+                                                                          Low)
+                                                                         Low)
+                                                                        Low)
+                                                                       Low))
+                                                                 ((((((((W8 Low) Low) Low) Low) Low)
+                                                                        Low)
+                                                                       Low)
+                                                                      Low))
+                                                                ((((((((W8 Low) Low) Low) Low) Low)
+                                                                       Low)
+                                                                      Low)
+                                                                     Low))
+                                                               ((((((((W8 Low) Low) Low) Low) Low)
+                                                                      Low)
+                                                                     Low)
+                                                                    Low))
+                                                              ((((((((W8 Low) Low) Low) Low) Low)
+                                                                     Low)
+                                                                    Low)
+                                                                   Low))
+                                                             ((((((((W8 Low) Low) Low) Low) Low)
+                                                                    Low)
+                                                                   Low)
+                                                                  Low))
+                                                            ((((((((W8 Low) Low) Low) Low) Low) Low)
+                                                                  Low)
+                                                                 Low))
+                                                           ((((((((W8 Low) Low) Low) Low) Low) Low)
+                                                                 Low)
+                                                                Low))
+                                                          ((((((((W8 Low) Low) Low) Low) Low) Low)
+                                                                Low)
+                                                               Low))
+                                                         ((((((((W8 Low) Low) Low) Low) Low) Low)
+                                                               Low)
+                                                              Low))
+                                                        ((((((((W8 Low) Low) Low) Low) Low) Low)
+                                                              Low)
+                                                             Low))
+                                                       ((((((((W8 Low) Low) Low) Low) Low) Low) Low)
+                                                            Low))
+                                                      ((((((((W8 Low) Low) Low) Low) Low) Low) Low)
+                                                           Low))
+                                                     ((((((((W8 Low) Low) Low) Low) Low) Low) Low)
+                                                          Low))
+                                                    ((((((((W8 Low) Low) Low) Low) Low) Low) Low)
+                                                         Low))
+                                                   ((((((((W8 Low) Low) Low) Low) Low) Low) Low)
+                                                        Low))
+                                                  ((((((((W8 Low) Low) Low) Low) Low) Low) Low)
+                                                       Low))
+                                                 ((((((((W8 Low) Low) Low) Low) Low) Low) Low) Low))
+                                                ((((((((W8 Low) Low) Low) Low) Low) Low) Low) Low))
+                                               ((((((((W8 Low) Low) Low) Low) Low) Low) Low) Low))
+                                              ((((((((W8 Low) Low) Low) Low) Low) Low) Low) Low))
+                                             ((((((((W8 Low) Low) Low) Low) Low) Low) Low) Low))
+                                            ((((((((W8 Low) Low) Low) Low) Low) Low) Low) Low))
+                                           ((((((((W8 Low) Low) Low) Low) Low) Low) Low) Low))
+                                          ((((((((W8 Low) Low) Low) Low) Low) Low) Low) Low))
+                                         ((((((((W8 Low) Low) Low) Low) Low) Low) Low) Low))
+                                        ((((((((W8 Low) Low) Low) Low) Low) Low) Low) Low))
+                                       ((((((((W8 Low) Low) Low) Low) Low) Low) Low) Low))
+                                      ((((((((W8 Low) Low) Low) Low) Low) Low) Low) Low))
+                                     ((((((((W8 Low) Low) Low) Low) Low) Low) Low) Low))
+                                    ((((((((W8 Low) Low) Low) Low) Low) Low) Low) Low))
+                                   ((((((((W8 Low) Low) Low) Low) Low) Low) Low) Low))
+                                  ((((((((W8 Low) Low) Low) Low) Low) Low) Low) Low))
+                                 ((((((((W8 Low) Low) Low) Low) Low) Low) Low) Low))
+                                ((((((((W8 Low) Low) Low) Low) Low) Low) Low) Low))
+                               ((((((((W8 Low) Low) Low) Low) Low) Low) Low) Low))
+                              ((((((((W8 Low) Low) Low) Low) Low) Low) Low) Low))
+                             ((((((((W8 Low) Low) Low) Low) Low) Low) Low) Low))
+                            ((((((((W8 Low) Low) Low) Low) Low) Low) Low) Low))
+                           ((((((((W8 Low) Low) Low) Low) Low) Low) Low) Low))
+                          ((((((((W8 Low) Low) Low) Low) Low) Low) Low) Low))
+                         ((((((((W8 Low) Low) Low) Low) Low) Low) Low) Low))
+                        ((((((((W8 Low) Low) Low) Low) Low) Low) Low) Low))
+                       ((((((((W8 Low) Low) Low) Low) Low) Low) Low) Low))
+                      ((((((((W8 Low) Low) Low) Low) Low) Low) Low) Low))
+                     ((((((((W8 Low) Low) Low) Low) Low) Low) Low) Low))
+                    ((((((((W8 Low) Low) Low) Low) Low) Low) Low) Low))
+                   ((((((((W8 Low) Low) Low) Low) Low) Low) Low) Low))
+                  ((((((((W8 Low) Low) Low) Low) Low) Low) Low) Low))
+                 ((((((((W8 Low) Low) Low) Low) Low) Low) Low) Low))
+                ((((((((W8 Low) Low) Low) Low) Low) Low) Low) Low))
+               ((((((((W8 Low) Low) Low) Low) Low) Low) Low) Low))
+              ((((((((W8 Low) Low) Low) Low) Low) Low) Low) Low))
+             ((((((((W8 Low) Low) Low) Low) Low) Low) Low) Low))
+            ((((((((W8 Low) Low) Low) Low) Low) Low) Low) Low))
+           ((((((((W8 Low) Low) Low) Low) Low) Low) Low) Low))
+          ((((((((W8 Low) Low) Low) Low) Low) Low) Low) Low))
+         ((((((((W8 Low) Low) Low) Low) Low) Low) Low) Low))
+step :: Tuple2 Bytes8 Bytes8 -> {- computation -} ReT (Tuple2 Bytes8 Bytes8) Bytes64 I Unit
+step =
+    (\ x -> (case x of
+                 {((Tuple2 b0 b1)) -> (let y = ((((buildSalsa256 key1) key2)
+                                                           b0)
+                                                          b1) in ((bind (signal y))
+                                                                      (\ r -> (step r))))}))
+foo :: {- computation -} ReT (Tuple2 Bytes8 Bytes8) Bytes64 I Unit
+foo =
+    ((bind (signal zerothoutput)) (\ r -> (step r)))
+start :: {- computation -} ReT (Tuple2 Bytes8 Bytes8) Bytes64 I Unit
+start =
+    foo
 
-salsaEncrypt :: Key -> Key -> Nonce -> ReSalsa ()
-salsaEncrypt k0 k1 n = signal EReady >>= (\rsp -> case rsp of 
-                                                        Complete     -> salsaInit
-                                                        Encrypt m o  -> return (encrypt256 m k0 k1 n o) >>= \e -> salsaEmitEncrypt k0 k1 n e
-                                                        _            -> salsaInit) --Errors reset the state of the encryptor 
-
-salsaEmitEncrypt :: Key -> Key -> Nonce -> Ciphertext -> ReSalsa ()
-salsaEmitEncrypt k0 k1 n ct = signal (ReadyEmit ct) >>= (\rsp -> case rsp of 
-                                                                        Complete     -> salsaInit
-                                                                        Encrypt m o  -> return (encrypt256 m k0 k1 n o) >>= \e -> salsaEmitEncrypt k0 k1 n e
-                                                                        _            -> salsaInit) --Errors reset the state of the encryptor 
---End device functions
-
-xor64 :: Bytes64 -> Bytes64 -> Bytes64
-xor64 (Bytes64 a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 a16 a17 a18 a19 a20 a21 a22 a23 a24 a25 a26 a27 a28 a29 a30 a31 a32 a33 a34 a35 a36 a37 a38 a39 a40 a41 a42 a43 a44 a45 a46 a47 a48 a49 a50 a51 a52 a53 a54 a55 a56 a57 a58 a59 a60 a61 a62 a63) 
-      (Bytes64 b0 b1 b2 b3 b4 b5 b6 b7 b8 b9 b10 b11 b12 b13 b14 b15 b16 b17 b18 b19 b20 b21 b22 b23 b24 b25 b26 b27 b28 b29 b30 b31 b32 b33 b34 b35 b36 b37 b38 b39 b40 b41 b42 b43 b44 b45 b46 b47 b48 b49 b50 b51 b52 b53 b54 b55 b56 b57 b58 b59 b60 b61 b62 b63) = 
-        Bytes64(a0 `xor` b0) (a1 `xor` b1) (a2 `xor` b2) (a3 `xor` b3) (a4 `xor` b4) (a5 `xor` b5) (a6 `xor` b6) (a7 `xor` b7) (a8 `xor` b8) (a9 `xor` b9) (a10 `xor` b10) (a11 `xor` b11) (a12 `xor` b12) (a13 `xor` b13) (a14 `xor` b14) (a15 `xor` b15) (a16 `xor` b16) (a17 `xor` b17) (a18 `xor` b18) (a19 `xor` b19) (a20 `xor` b20) (a21 `xor` b21) (a22 `xor` b22) (a23 `xor` b23) (a24 `xor` b24) (a25 `xor` b25) (a26 `xor` b26) (a27 `xor` b27) (a28 `xor` b28) (a29 `xor` b29) (a30 `xor` b30) (a31 `xor` b31) (a32 `xor` b32) (a33 `xor` b33) (a34 `xor` b34) (a35 `xor` b35) (a36 `xor` b36) (a37 `xor` b37) (a38 `xor` b38) (a39 `xor` b39) (a40 `xor` b40) (a41 `xor` b41) (a42 `xor` b42) (a43 `xor` b43) (a44 `xor` b44) (a45 `xor` b45) (a46 `xor` b46) (a47 `xor` b47) (a48 `xor` b48) (a49 `xor` b49) (a50 `xor` b50) (a51 `xor` b51) (a52 `xor` b52) (a53 `xor` b53) (a54 `xor` b54) (a55 `xor` b55) (a56 `xor` b56) (a57 `xor` b57) (a58 `xor` b58) (a59 `xor` b59) (a60 `xor` b60) (a61 `xor` b61) (a62 `xor` b62) (a63 `xor` b63)
-
-salsaRot  :: StateT (Words16 W32) I ()
-salsaRot = salsa >> salsa >> salsa >> salsa >> salsa >> salsa >> salsa >> salsa >> salsa >> salsa
-
-salsa20 :: Bytes64 -> Bytes64
-salsa20 x = let x'         = impwords x 
-                (_,salsad) = deId $ deST salsaRot x'
-             in expwords (addWords x' salsad)
-              where
-                 addWords (Words16 a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15) 
-                          (Words16 b0 b1 b2 b3 b4 b5 b6 b7 b8 b9 b10 b11 b12 b13 b14 b15) = 
-                            Words16 (a0+b0) #$ a1+b1 #$ a2+b2 #$ a3+b3 #$ a4+b4 #$ a5+b5 #$ a6+b6 #$ a7+b7 #$ a8+b8 #$ a9+b9 #$ a10+b10 #$ a11+b11 #$ a12+b12 #$ a13+b13 #$ a14+b14 #$ a15+b15
-
---Build a 256-bit frame
---Includes the sigma paddings defined in the Salsa20 spec by Berstein
-buildSalsa256 :: Bytes16 -> Bytes16 -> Bytes16 -> Bytes64
-buildSalsa256 (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15) (b0,b1,b2,b3,b4,b5,b6,b7,b8,b9,b10,b11,b12,b13,b14,b15) (n0,n1,n2,n3,n4,n5,n6,n7,n8,n9,n10,n11,n12,n13,n14,n15) = salsa20 $
-      Bytes64 101 120 112 97  a0  a1  a2  a3  a4 a5 a6 a7  a8 a9 a10 a11 
-              a12 a13 a14 a15 110 100 32  51  n0 n1 n2 n3  n4  n5  n6 n7
-              n8  n9  n10 n11 n12 n13 n14 n15 50 45 98 121 b0  b1  b2 b3 
-              b4 b5 b6  b7 b8  b9  b10 b11 b12 b13 b14 b15 116 101 32 107
-
-encrypt256 :: Message -> Key -> Key -> Nonce -> Count -> Ciphertext
-encrypt256 m k0 k1 n c = let frame = buildSalsa256 k0 k1 n c 
-                          in frame `xor64` m
+---------------------
+--Simulation Shimming
+---------------------
+convWord :: Word64 -> Bytes8
+convWord wrd = let [b0,b1,b2,b3,b4,b5,b6,b7] = map word8ToW8 $ reverse $ unpack $ runPut $ put wrd
+                in Bytes8 b0 b1 b2 b3 b4 b5 b6 b7
 
 
--}
+zeroBytes = Bytes8 0 0 0 0 0 0 0 0
+
+ffBytes = Bytes8 255 255 255 255 255 255 255 255 
+
+simulate :: IO ()
+simulate = do
+              cn <- newMVar (0 :: Word64)
+              runReacT start (stepOutput cn)
+              return ()
+  where
+    stepOutput counter output = do
+                                  c <- takeMVar counter
+                                  putMVar counter (c+1)
+                                  print output
+                                  putStrLn "Enter to continue."
+                                  getLine
+                                  return (Tuple2 zeroBytes zeroBytes)
+                                  
+main = simulate
