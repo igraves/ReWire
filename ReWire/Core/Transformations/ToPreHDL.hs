@@ -952,7 +952,8 @@ funPat lscr tscr (RWCPatCon dci ps) = do (ctm,rtm) <- mkFunTagCheck dci lscr
                                                         rms   =  map (\ (_,_,rm) -> rm) bdscsrms
                                                     rm        <- freshLocBool
                                                     return (concat bdss,
-                                                            foldr1 mkSeq ([ctm] ++ cfs ++ cs ++ [Assign rm (BoolRHS (foldr1 And (map BoolVar rms)))]),
+                                                            foldr1 mkSeq ([ctm] ++ cfs ++ cs ++ [Assign rm (BoolRHS (foldr1 And (map BoolVar (rtm:rms))))]),
+                                                            --foldr1 mkSeq ([ctm] ++ cfs ++ cs ++ [Assign rm (BoolRHS (foldr1 And (map BoolVar rms)))]),
                                                             rm)
 funPat lscr tscr RWCPatWild         = do rm <- freshLocBool
                                          return ([],Assign rm (BoolRHS (BoolConst True)),rm)
@@ -1027,7 +1028,12 @@ funExpr e = case ef of
                           crs          <- mapM funExpr eargs
                           let (cs,rs)  =  unzip crs
                           -- Concatenate tag and args, result in r.
-                          return (foldr1 mkSeq (cs++[Assign r (ConcatRHS ([rt]++rs++[r_pad]))]),r)
+                          --return (foldr1 mkSeq (cs++[Assign r (ConcatRHS ([rt]++rs++[r_pad]))]),r)
+                          return (foldr1 mkSeq ([Assign rt (ConstRHS t),
+                                                 Assign r_pad (ConstRHS (replicate pad_size Zero))]
+                                                ++ cs
+                                                ++ [Assign r (ConcatRHS ([rt]++rs++[r_pad]))]),
+                                  r)
              RWCCase escr alts               -> do
                case eargs of
                  [] -> do
@@ -1038,7 +1044,8 @@ funExpr e = case ef of
                    calts <- mapM (funAlt' r_scr (typeOf escr) r_res) alts
                    let cases = map ((\(l,c) -> (BoolVar l, c)) . snd) calts
                        cmatch = foldr1 mkSeq $ map fst calts
-                   return (mkSeq cmatch (CaseIf cases),r_res)
+                   --return (mkSeq cmatch (CaseIf cases),r_res)
+                   return (c_scr `mkSeq` cmatch `mkSeq` (CaseIf cases),r_res)
                  _  -> fail "funExpr: encountered case expression in function position"
   where (ef:eargs) = flattenApp e
 
