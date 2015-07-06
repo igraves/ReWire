@@ -31,6 +31,7 @@ elimCmd (Assign "EMPTY" _) = Skip
 elimCmd (Assign r rhs)     = Assign r (elimRHS rhs)
 elimCmd (If b c)           = If (elimBool b) (elimCmd c)
 elimCmd (Seq c1 c2)        = Seq (elimCmd c1) (elimCmd c2)
+elimCmd (CaseIf cses)      = CaseIf (map (\(be,cmd) -> (be,elimCmd cmd)) cses)
 elimCmd c                  = c
 
 elimEmpty :: Prog -> Prog
