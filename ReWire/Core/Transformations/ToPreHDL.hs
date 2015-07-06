@@ -755,7 +755,7 @@ cfgCLExp p_ = let (Leaf main_is, named_cl, devs) = runRW ctr p $ clexps
                   compiled_devs  = fmap (fmap tfun) devs
                   cd' = map (\(s,(_,i)) -> (s,i)) compiled_devs
                   (main_width,(m,_)) = runState (cTW (Leaf main_is)) (Map.fromAscList cd',named_cl)
-               in trace (show (m,cd')) $ (main_is,main_width,m,compiled_devs,named_cl) 
+               in (main_is,main_width,m,compiled_devs,named_cl) 
 --cfgFromRW p_ = tfun $ runRW ctr p $ sexprs 
   where 
         clexps :: RW (CLNamed,[NCL],[NRe])
@@ -914,7 +914,8 @@ cmdToVHDL :: TransCommand
 --cmdToVHDL _ p = (Nothing,Just (clVHDL (c2p (cfgCLExp (mangle mangler p)))))
 cmdToVHDL _ p = (Nothing,Just (clVHDL (c2p (cfgCLExp (p)))))
   where
-    c2p (a,b,c,d,e) = (a,b,c,map (\(x,(y,z)) -> (x,(elimEmpty $ gotoElim $ cfgToProg y,z))) d,convNCLs p e)
+    c2p (a,b,c,d,e) = (a,b,c,map (\(x,(y,z)) -> (x,(elimEmpty $ gotoElim $ cfgToProg y,z))) d,map elimNCLF $ convNCLs p e)
+    elimNCLF (s,fs,cln) = (s,map elimFunDefn fs,cln)
 --cmdToVHDL _ p = (Nothing,Just (devsToVHDL ((cfgFromRW p))))
 
 mkFunTagCheck :: DataConId -> Loc -> CGM (Cmd,Loc)
