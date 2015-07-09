@@ -103,7 +103,7 @@ flopNextName n = n ++ "_flop_next"
 --        ++ "-- Comment out the following line if VHDL primitives are not in use.\n"
 --        ++ "use work.prims.all;\n"
 --        ++ "entity rewire is\n"
-clVHDL :: (String,(Int,Int),Map.Map String (Int,Int),[(String, (Prog, (Int, Int)))],[NCLF]) -> String
+clVHDL :: (String,(Int,Int),[(String,(Int,Int))],[(String, (Prog, (Int, Int)))],[NCLF]) -> String
 clVHDL (main_is,(mi,mo),iomap, ps, named) = let entities = concatMap (\(s,(p,_)) -> toVHDL s p) ps
                                           in entities
                                              ++ (concatMap (procCL iomap) named)
@@ -115,15 +115,15 @@ progVHDL ps = let entities = concatMap (\(s,(p,_)) -> toVHDL s p) ps
                   owidth   = foldr (\(_,(_,(_,o))) acc -> o+acc) 0 ps
             in entities -- ++ main iwidth owidth ps
 
-procCL :: Map.Map String (Int,Int) -> NCLF -> String
+procCL :: [(String,(Int,Int))] -> NCLF -> String
 procCL m (n,_,(Par devs)) = let devs' = map devRefs devs 
-                                (i,o) = case Map.lookup n m of
+                                (i,o) = case lookup n m of
                                             Nothing -> error $ "procCL: Encountered an unknown reference (non-leaf).  For: " ++ (show n)
                                             Just z  -> z
                            in pars i o n devs'
   where
     devRefs :: CLFNamed -> (String,(Int,Int))
-    devRefs (Leaf s) = case Map.lookup s m of
+    devRefs (Leaf s) = case lookup s m of
                               Nothing -> error "procCL: Encountered an unknown Leaf reference"
                               Just z  -> (s,z)
     devRefs _        = error "procCL: devRefs encountered a non-Leaf"
@@ -132,11 +132,11 @@ procCL m (n,_,(Par devs)) = let devs' = map devRefs devs
 
 
 
-procCL m (n,fds,(ReFold f1 f2 (Leaf dev))) = let (i,o) = case Map.lookup n m of
+procCL m (n,fds,(ReFold f1 f2 (Leaf dev))) = let (i,o) = case lookup n m of
                                                                Nothing -> error "procCL: Encountered an unknown reference on outer device name in refold."
                                                                Just z  -> z
                                                  --This is the interior device
-                                                 (ii,io) = case Map.lookup dev m of
+                                                 (ii,io) = case lookup dev m of
                                                                Nothing -> error "procCL: Encountered an unknown reference on inner device name in refold."
                                                                Just z  -> z
                                   --           f1' = f1 {funDefnName="fout"}
@@ -162,11 +162,11 @@ procCL m (n,fds,(ReFold f1 f2 (Leaf dev))) = let (i,o) = case Map.lookup n m of
                                   ++ indent "output <= " ++ f1 ++ "(doutput);\n"
                                   ++ "\nend behavioral;\n"
 
-procCL m (n,fds,(ReFoldT f1 f2 (Leaf dev))) = let (i,o) = case Map.lookup n m of
+procCL m (n,fds,(ReFoldT f1 f2 (Leaf dev))) = let (i,o) = case lookup n m of
                                                                Nothing -> error "procCL: Encountered an unknown reference on outer device name in refoldT."
                                                                Just z  -> z
                                                   --This is the interior device
-                                                  (ii,io) = case Map.lookup dev m of
+                                                  (ii,io) = case lookup dev m of
                                                                Nothing -> error "procCL: Encountered an unknown reference on inner device name in refoldT."
                                                                Just z  -> z
                                               --f1' = f1 {funDefnName="fout"}

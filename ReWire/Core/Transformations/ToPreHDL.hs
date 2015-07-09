@@ -16,8 +16,9 @@ import ReWire.Core.Syntax
 import ReWire.Scoping
 import Control.Monad.State
 import Control.Monad.Reader
-import Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
+--import Data.Map.Strict (Map)
+import Data.Map (Map)
+import qualified Data.Map as Map
 import Data.Graph.Inductive
 import Data.List (foldl',find,findIndex)
 import Data.Maybe (fromJust)
@@ -754,7 +755,7 @@ cfgProg e = --do md <- lift $ lift $ queryG (mkId "start")
 cfgCLExp p_ = let (Leaf main_is, named_cl, devs) = runRW ctr p $ clexps 
                   compiled_devs  = fmap (fmap tfun) devs
                   cd' = map (\(s,(_,i)) -> (s,i)) compiled_devs
-                  (main_width,(m,_)) = runState (cTW (Leaf main_is)) (Map.fromAscList cd',named_cl)
+                  (main_width,(m,_)) = runState (cTW (Leaf main_is)) (cd',named_cl)
                in (main_is,main_width,m,compiled_devs,named_cl) 
 --cfgFromRW p_ = tfun $ runRW ctr p $ sexprs 
   where 
@@ -798,17 +799,17 @@ cfgCLExp p_ = let (Leaf main_is, named_cl, devs) = runRW ctr p $ clexps
         --This is likely dirty and inefficient, but for now we rebuild the monad stack to get type widths
         dt t  = fst $ runRW ctr p (runStateT (runReaderT (tyWidth t) env0) s0)
 
-        cTW :: CLNamed -> State (Map.Map String (Int,Int),[NCL]) (Int,Int) 
+        cTW :: CLNamed -> State ([(String,(Int,Int))],[NCL]) (Int,Int) 
         cTW (Leaf s) = do
                           (m,names) <- get
-                          case Map.lookup s m of
+                          case lookup s m of
                                 Just res -> return res
                                 Nothing  -> case lookup s names of
-                                                    Nothing -> fail "cfgCLExp: Constructing type widths hit an unknown leaf value."
+                                                    Nothing -> fail $ "cfgCLExp: Constructing type widths hit an unknown leaf value. " ++ (show s)
                                                     Just z  -> do
                                                                 res <- cTW z
                                                                 (m',names') <- get
-                                                                put (Map.insert s res m', names')
+                                                                put ((s,res):m', names')
                                                                 return res
         cTW rf@(ReFold f1 f2 se) = do
                                   !res <- cTW se 
