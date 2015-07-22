@@ -20,7 +20,7 @@ import Control.Monad.Reader
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Graph.Inductive
-import Data.List (foldl',find,findIndex)
+import Data.List (foldl',find,findIndex,partition)
 import Data.Maybe (fromJust)
 
 --CL
@@ -752,13 +752,44 @@ cfgProg e = --do md <- lift $ lift $ queryG (mkId "start")
              --                            cfgStart e
 
 --cfgCLExp :: RWCProg -> CGM ()
-cfgCLExp p_ = let (Leaf main_is, named_cl, devs) = runRW ctr p $ clexps 
+cfgCLExp p_ = let (Leaf main_is, named_cl, devs) = remapDevs $ runRW ctr p $ clexps 
                   compiled_devs  = fmap (fmap tfun) devs
                   cd' = map (\(s,(_,i)) -> (s,i)) compiled_devs
                   (main_width,(m,_)) = runState (cTW (Leaf main_is)) (cd',named_cl)
                in (main_is,main_width,m,compiled_devs,named_cl) 
 --cfgFromRW p_ = tfun $ runRW ctr p $ sexprs 
   where 
+        remapDevs :: (CLNamed,[NCL],[NRe]) -> (CLNamed,[NCL],[NRe])
+        remapDevs (main,ncls,devs) = let mpdevs = map devMap $ groupDevs devs
+                                         devs'  = map fst mpdevs
+                                         amap   = concatMap snd mpdevs
+                                         rfun   = renamer amap
+                                         ncls'  = map (\(n,clt) -> (n, fmap rfun clt)) ncls
+                                         main'  = fmap rfun main
+                                      in (main',ncls',devs') 
+       
+        renamer :: Eq a => [(a,a)] -> (a -> a)
+        renamer mp = (\x -> case lookup x mp of
+                              Nothing -> x
+                              Just y  -> y
+                     )
+        
+        devMap :: [NRe] -> (NRe,[(String,String)])
+        devMap []     = error "devMap mapping over empty list."
+        devMap [x]    = (x,[])
+        devMap (x:xs) = let dst = fst x
+                            mp  = map (\nre -> (fst nre, dst)) xs
+                         in (x,mp)
+
+        groupDevs :: [NRe] -> [[NRe]]
+        groupDevs [] = [] 
+        groupDevs xs = let (grp,rest) = partDev xs
+                        in grp : groupDevs rest
+
+        partDev :: [NRe] -> ([NRe],[NRe])
+        partDev [] = ([],[])
+        partDev (x:xs) = let (l,r) = partition (\y -> snd x == snd y) xs 
+                           in (x : l,r)
         clexps :: RW (CLNamed,[NCL],[NRe])
         clexps = do
                   s <- queryG (mkId "start")

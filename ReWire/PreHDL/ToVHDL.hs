@@ -220,12 +220,14 @@ pars i o n devs = "library ieee;\n"
         ++ "         output : out std_logic_vector (0 to " ++ show (o-1) ++ "));\n"
         ++ "end " ++ n ++ ";\n"
         ++ "architecture behavioral of " ++ n ++ " is\n"
-        ++ indent (sigdecls devs)
+        ++ indent (sigdecls devs')
         ++ "begin\n"
-        ++ indent (siginlinks devs)
-        ++ indent (portMaps devs)
-        ++ indent (sigoutlinks devs)
+        ++ indent (siginlinks devs')
+        ++ indent (portMaps devs devs')
+        ++ indent (sigoutlinks devs')
         ++ "\nend behavioral;\n"
+  where
+    devs' = map (\((n,wdth),i) -> (n++"_"++(show i),wdth)) $ zip devs [0..]
 
 
 main :: Int -> Int -> String -> String
@@ -266,10 +268,10 @@ sigoutlinks xs = "output <= " ++ sigoutlinks' 0 xs
     sigoutlinks' o ((n,(_,ow)):[]) = n ++ "output;"
     sigoutlinks' o ((n,(_,ow)):xs) = n ++ "output & " ++ sigoutlinks' (o+ow) xs  
 
-portMaps :: [(String,(Int,Int))] -> String
-portMaps [] = ""
-portMaps ((n,_):xs) = n ++ "dev : entity work." ++ n ++ "(behavioral)\n"
-                        ++ "  port map (clk," ++ n ++ "input," ++ n ++ "output);\n\n" ++ (portMaps xs)
+portMaps :: [(String,(Int,Int))] -> [(String,(Int,Int))] -> String
+portMaps [] [] = ""
+portMaps ((n,_):xs) ((o,_):ys) = o ++ "dev : entity work." ++ n ++ "(behavioral)\n"
+                                   ++ "  port map (clk," ++ o ++ "input," ++ o ++ "output);\n\n" ++ (portMaps xs ys)
 
 toVHDL :: String -> Prog -> String
 toVHDL e p = "library ieee;\n"

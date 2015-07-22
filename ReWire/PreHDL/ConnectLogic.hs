@@ -59,9 +59,10 @@ nextLabel = do
               return ("rwcomp" ++ show r)
 
 instance forall f . Functor (CLTree f) where
-  fmap f (Par ls)        = Par $ fmap (fmap f) ls 
-  fmap f (ReFold f1 f2 r) = ReFold f1 f2 (fmap f r) 
-  fmap f (Leaf a)         = Leaf (f a)
+  fmap f (Par ls)          = Par $ fmap (fmap f) ls 
+  fmap f (ReFold f1 f2 r)  = ReFold f1 f2 (fmap f r) 
+  fmap f (ReFoldT f1 f2 r) = ReFoldT f1 f2 (fmap f r) 
+  fmap f (Leaf a)          = Leaf (f a)
 
 instance forall f . Foldable (CLTree f) where
   foldMap f (Par ls) = mconcat $ map (foldMap f) ls --) `mappend` (foldMap f r)

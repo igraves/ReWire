@@ -16,7 +16,8 @@ import ReWire.Core.Syntax
 import qualified Data.Map.Strict as Map
 import Control.Monad.State
 import Data.Map (Map)
-import Control.Monad.Error
+--import Control.Monad.Error
+import Control.Monad.Except
 import Data.List (find)
 import Data.Maybe (fromJust)
 import ReWire.Scoping

@@ -78,7 +78,7 @@ data RWCExp = RWCApp RWCExp RWCExp
             | RWCCon DataConId RWCTy
             | RWCLiteral RWCLit
             | RWCCase RWCExp [RWCAlt]
-            deriving Show
+            deriving (Show, Eq)
 
 instance IdSort RWCExp where
   idSort _ = pack "E"
@@ -166,7 +166,7 @@ instance NFData RWCLit where
 ---
   
 data RWCAlt = RWCAlt RWCPat RWCExp
-              deriving Show
+              deriving (Show,Eq)
 
 instance Subst RWCAlt RWCExp where
   fv (RWCAlt p e)     = filter (not . (`elem` patvars p)) (fv e)
@@ -190,7 +190,7 @@ data RWCPat = RWCPatCon DataConId [RWCPat]
             | RWCPatLiteral RWCLit
             | RWCPatVar (Id RWCExp) RWCTy
             | RWCPatWild
-            deriving Show
+            deriving (Show, Eq)
 
 patvars :: RWCPat -> [Id RWCExp]
 patvars (RWCPatCon _ ps)  = concatMap patvars ps
